@@ -1,0 +1,421 @@
+{
+  "total": 500,
+  "data": {
+    "total": 500,
+    "songlist": [
+      {
+        "author_name": "村口吴老二",
+        "copyright": {
+          "old_hide": 1
+        },
+        "user_download": {
+          "status_high": 0,
+          "status_128": 0,
+          "status_320": 0,
+          "status_super": 1,
+          "status_flac": 0
+        },
+        "audio_info": {
+          "duration_320": 186000,
+          "bitrate_flac": 889,
+          "filesize_128": 2978161,
+          "bitrate_super": 0,
+          "duration_flac": 186000,
+          "duration_super": 0,
+          "bitrate": 128,
+          "duration_128": 186000,
+          "bitrate_high": 1701,
+          "duration_high": 186000,
+          "hash_super": "",
+          "filesize_flac": 20674358,
+          "hash_flac": "9BA526163CBC4FAECBF99386F6B600F9",
+          "hash_320": "1C32ED2F41FB4E479BB31C66602BC587",
+          "filesize_high": 39557302,
+          "extname_super": "",
+          "hash_high": "B67BC982F25F5F398645305BC111780F",
+          "filesize_super": 0,
+          "extname": "mp3",
+          "hash_128": "D0F928C394C175BC0F4CAD8B9C3B5E9E",
+          "filesize_320": 7444917
+        },
+        "rank_cid": 166057,
+        "musical": {},
+        "goods_info": {
+          "album_sale_url": ""
+        },
+        "business": {
+          "rank_id": "166057",
+          "issue": "314",
+          "offset": 0,
+          "level": 2,
+          "last_sort": 3,
+          "buy_count": "0",
+          "album_audio_remark": "",
+          "extern": "",
+          "sort": 1,
+          "max_sort": 0,
+          "recommend_reason": "",
+          "original_index": 1,
+          "filename": "村口吴老二 - 慌啥子嘛",
+          "addtime": "2026-11-10 08:30:00",
+          "parent_id": "8888",
+          "exclusive": 0,
+          "rank_id_publish_date": "2026-11-10 08:30:00",
+          "last_original_index": 3,
+          "is_recent_year": 1,
+          "rank_count": 15
+        },
+        "deprecated": {
+          "pkg_price_high": 1,
+          "type_128": "audio",
+          "bitrate": 128,
+          "filesize": 2978161,
+          "cd_url": "",
+          "type": "audio",
+          "price_128": 200,
+          "pay_type_super": 0,
+          "duration": 186000,
+          "pay_type_320": 3,
+          "type_super": "",
+          "price": 200,
+          "pkg_price_flac": 1,
+          "type_320": "audio",
+          "old_cpy": 0,
+          "pay_type_128": 3,
+          "pay_type": 3,
+          "id": 658331615,
+          "pay_type_high": 3,
+          "pay_type_flac": 3,
+          "price_high": 200,
+          "price_flac": 200,
+          "extname": "mp3",
+          "price_super": 0,
+          "type_flac": "audio",
+          "type_high": "audio",
+          "pkg_price_super": 0,
+          "pkg_price_128": 1,
+          "pkg_price_320": 1,
+          "price_320": 200,
+          "topic_remark": "",
+          "pkg_price": 1,
+          "hash": "D0F928C394C175BC0F4CAD8B9C3B5E9E",
+          "status": 0,
+          "cid": 668461400
+        },
+        "songname": "慌啥子嘛",
+        "audio_id": 658331615,
+        "has_obbligato": 1,
+        "trans_param": {
+          "free_limited": 1,
+          "classmap": {
+            "attr0": 234881032
+          },
+          "pay_block_tpl": 1,
+          "display": 0,
+          "flags": {},
+          "ogg_320_filesize": 6834433,
+          "ipmap": {
+            "attr0": 33554432,
+            "bits": "10000002000000"
+          },
+          "language": "国语",
+          "cpy_grade": 5,
+          "ogg_128_hash": "446797FC7EE56ECB8D259710FC76AFBD",
+          "ogg_320_hash": "18738E668C1B7A2561829179CF55E65C",
+          "ogg_128_filesize": 2125241,
+          "musicpack_advance": 0,
+          "qualitymap": {
+            "attr0": 1023468660,
+            "bits": "28fffc0db411fefebd00e474",
+            "attr1": 1747189245
+          },
+          "cpy_map": "2",
+          "provider": 5,
+          "hash_multitrack": "BE861949B18D04FC6E09E63AC1111C7E",
+          "cpy_attr0": 58720256,
+          "display_rate": 0,
+          "cpy_level": 1,
+          "union_cover": "http://imge.kugou.com/stdmusic/{size}/20261105/20261105095953467322.jpg",
+          "cid": 668461400,
+          "hash_offset": {
+            "offset_hash": "B56998E2B3B799F7FA3016D15F2F80AE",
+            "clip_hash": "D67C8D6B5899C5617A7881EB450461C9",
+            "start_byte": 0,
+            "file_type": 0,
+            "end_ms": 60000,
+            "end_byte": 960125,
+            "start_ms": 0
+          }
+        },
+        "zone": "tx6_gz_kmr",
+        "album_info": {
+          "sizable_cover": "http://imge.kugou.com/stdmusic/{size}/20261105/20261105095953467322.jpg",
+          "album_name": "慌啥子嘛"
+        },
+        "privilege_download": {
+          "fail_process_320": 4,
+          "fail_process_super": 0,
+          "privilege_128": 8,
+          "fail_process_128": 4,
+          "fail_process": 4,
+          "privilege_high": 10,
+          "privilege_flac": 10,
+          "fail_process_flac": 4,
+          "privilege_320": 10,
+          "privilege": 8,
+          "privilege_super": 0,
+          "fail_process_high": 4
+        },
+        "album_audio_id": 968734427,
+        "album_id": 209518658,
+        "trans_obj": {
+          "rank_show_sort": 1
+        },
+        "mvdata": [
+          {
+            "typ": 0,
+            "id": "18420171",
+            "trk": "3",
+            "hash": "C4EE55801F239CF41D5BF5936A5B7322"
+          }
+        ],
+        "video_info": {
+          "video_track": 0,
+          "video_timelength": 0,
+          "video_hash": "",
+          "video_filesize": 0,
+          "video_id": 0
+        },
+        "remarks": [],
+        "authors": [
+          {
+            "author_name": "村口吴老二",
+            "author_id": 22821916,
+            "sizable_avatar": "http://singerimg.kugou.com/uploadpic/softhead/{size}/20260831/20260831153821686650.jpg",
+            "is_publish": 1
+          }
+        ],
+        "is_publish": 1
+      },
+      {
+        "author_name": "苏艺馨Chency",
+        "copyright": {
+          "old_hide": 1
+        },
+        "user_download": {
+          "status_high": 0,
+          "status_128": 0,
+          "status_320": 0,
+          "status_super": 1,
+          "status_flac": 0
+        },
+        "audio_info": {
+          "duration_320": 236000,
+          "bitrate_flac": 867,
+          "filesize_128": 3790251,
+          "bitrate_super": 0,
+          "duration_flac": 236000,
+          "duration_super": 0,
+          "bitrate": 128,
+          "duration_128": 236000,
+          "bitrate_high": 1669,
+          "duration_high": 236000,
+          "hash_super": "",
+          "filesize_flac": 25647684,
+          "hash_flac": "75D1927935025E56C31B0989412F1C9E",
+          "hash_320": "8648A05FEC5ABDA68759BE6782EE2F19",
+          "filesize_high": 49388983,
+          "extname_super": "",
+          "hash_high": "6EDF64F3CB1A9948C169C49712345F34",
+          "filesize_super": 0,
+          "extname": "mp3",
+          "hash_128": "DB3014A58B305E63F94ECBE4AA8C9AE1",
+          "filesize_320": 9475332
+        },
+        "rank_cid": 166057,
+        "musical": {},
+        "goods_info": {
+          "album_sale_url": ""
+        },
+        "business": {
+          "rank_id": "166057",
+          "issue": "314",
+          "offset": 0,
+          "level": 2,
+          "last_sort": 1,
+          "buy_count": "0",
+          "album_audio_remark": "",
+          "extern": "",
+          "sort": 2,
+          "max_sort": 0,
+          "recommend_reason": "",
+          "original_index": 2,
+          "filename": "苏艺馨Chency - 时过境迁",
+          "addtime": "2026-11-10 08:30:00",
+          "parent_id": "8888",
+          "exclusive": 0,
+          "rank_id_publish_date": "2026-11-10 08:30:00",
+          "last_original_index": 1,
+          "is_recent_year": 1,
+          "rank_count": 24
+        },
+        "deprecated": {
+          "pkg_price_high": 1,
+          "type_128": "audio",
+          "bitrate": 128,
+          "filesize": 3790251,
+          "cd_url": "",
+          "type": "audio",
+          "price_128": 200,
+          "pay_type_super": 0,
+          "duration": 236000,
+          "pay_type_320": 3,
+          "type_super": "",
+          "price": 200,
+          "pkg_price_flac": 1,
+          "type_320": "audio",
+          "old_cpy": 0,
+          "pay_type_128": 3,
+          "pay_type": 3,
+          "id": 656912730,
+          "pay_type_high": 3,
+          "pay_type_flac": 3,
+          "price_high": 200,
+          "price_flac": 200,
+          "extname": "mp3",
+          "price_super": 0,
+          "type_flac": "audio",
+          "type_high": "audio",
+          "pkg_price_super": 0,
+          "pkg_price_128": 1,
+          "pkg_price_320": 1,
+          "price_320": 200,
+          "topic_remark": "",
+          "pkg_price": 1,
+          "hash": "DB3014A58B305E63F94ECBE4AA8C9AE1",
+          "status": 0,
+          "cid": 667309705
+        },
+        "songname": "时过境迁",
+        "audio_id": 656912730,
+        "has_obbligato": 1,
+        "trans_param": {
+          "classmap": {
+            "attr0": 234881032
+          },
+          "is_original": 1,
+          "pay_block_tpl": 1,
+          "display": 0,
+          "flags": {},
+          "ogg_320_filesize": 9240075,
+          "ipmap": {
+            "attr0": 154652381184,
+            "bits": "10002402001000"
+          },
+          "language": "国语",
+          "cpy_grade": 5,
+          "ogg_128_hash": "03313E60BFC3A0FE2B0ED1B197B613B8",
+          "ogg_320_hash": "949762B2C8E6DA2D3F6EDABC8C39E915",
+          "ogg_128_filesize": 2713812,
+          "musicpack_advance": 0,
+          "qualitymap": {
+            "attr0": 1023468660,
+            "bits": "28fffc0db411fefebd00e474",
+            "attr1": 1747189245
+          },
+          "cpy_map": "2",
+          "provider": 5,
+          "hash_multitrack": "4CE55A2ADBCECBF00EA2CC615A4E3F5F",
+          "cpy_attr0": 58720256,
+          "display_rate": 0,
+          "cpy_level": 1,
+          "union_cover": "http://imge.kugou.com/stdmusic/{size}/20260924/20260924154603458622.jpg",
+          "cid": 667309705,
+          "hash_offset": {
+            "offset_hash": "90B7F80BC14F2C56CDC3E757E2F86CD3",
+            "clip_hash": "7B83F777DAADAEA8769B9C04E244F003",
+            "start_byte": 0,
+            "file_type": 0,
+            "end_ms": 60000,
+            "end_byte": 960121,
+            "start_ms": 0
+          }
+        },
+        "zone": "tx6_gz_kmr",
+        "album_info": {
+          "sizable_cover": "http://imge.kugou.com/stdmusic/{size}/20260924/20260924154603458622.jpg",
+          "album_name": "时过境迁"
+        },
+        "privilege_download": {
+          "fail_process_320": 4,
+          "fail_process_super": 0,
+          "privilege_128": 8,
+          "fail_process_128": 4,
+          "fail_process": 4,
+          "privilege_high": 10,
+          "privilege_flac": 10,
+          "fail_process_flac": 4,
+          "privilege_320": 10,
+          "privilege": 8,
+          "privilege_super": 0,
+          "fail_process_high": 4
+        },
+        "album_audio_id": 967249675,
+        "album_id": 208978587,
+        "trans_obj": {
+          "rank_show_sort": 1
+        },
+        "mvdata": [
+          {
+            "typ": 0,
+            "id": "18424095",
+            "trk": "3",
+            "hash": "DA56702BF0620D23C15244ED071036FD"
+          }
+        ],
+        "video_info": {
+          "video_track": 0,
+          "video_timelength": 0,
+          "video_hash": "",
+          "video_filesize": 0,
+          "video_id": 0
+        },
+        "remarks": [],
+        "authors": [
+          {
+            "author_name": "苏艺馨Chency",
+            "author_id": 6891977,
+            "sizable_avatar": "http://singerimg.kugou.com/uploadpic/softhead/{size}/20260325/20260325160649888312.jpg",
+            "is_publish": 1
+          }
+        ],
+        "is_publish": 1
+      }
+    ]
+  },
+  "extra": {
+    "resp": {
+      "five_year_total": 183,
+      "recent_year_total": 141,
+      "follow_total": 0,
+      "vip_total": 0,
+      "new_total": 1,
+      "enjoy_total": 0,
+      "all_total": 500,
+      "scheduled_release_conf": {
+        "scheduled_release_time": "10:00:00",
+        "latest_rank_cid": 166057,
+        "latest_rank_cid_publish_date": "2026-11-10 08:30:00"
+      },
+      "rank_tag": [
+        {
+          "type": 3,
+          "desc": "有1首上新"
+        }
+      ]
+    }
+  },
+  "errmsg": "",
+  "error_code": 0,
+  "status": 1
+}

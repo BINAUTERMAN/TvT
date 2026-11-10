@@ -1,0 +1,46 @@
+{
+  "data": [
+    {
+      "son": [
+        {
+          "parent_id": "5",
+          "tag_name": "学习",
+          "tag_id": "587",
+          "sort": "1"
+        },
+        {
+          "parent_id": "5",
+          "tag_name": "工作",
+          "tag_id": "660",
+          "sort": "2"
+        }
+      ],
+      "parent_id": "0",
+      "tag_name": "场景",
+      "tag_id": "5",
+      "sort": "1"
+    },
+    {
+      "son": [
+        {
+          "parent_id": "1",
+          "tag_name": "精选",
+          "tag_id": "1084",
+          "sort": "2"
+        },
+        {
+          "parent_id": "1",
+          "tag_name": "经典",
+          "tag_id": "12",
+          "sort": "3"
+        }
+      ],
+      "parent_id": "0",
+      "tag_name": "主题",
+      "tag_id": "1",
+      "sort": "2"
+    }
+  ],
+  "error_code": 0,
+  "status": 1
+}

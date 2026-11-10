@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.ting.music.tests">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+    <application android:label="听屿设备测试">
+        <activity android:name=".FocusProbeActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+    <instrumentation android:name="cn.ting.music.tests.DeviceSmoke" android:targetPackage="cn.ting.music" android:label="听屿设备验证" />
+    <instrumentation android:name="cn.ting.music.tests.NetworkDiagnostics" android:targetPackage="cn.ting.music" android:label="听屿接口诊断" />
+    <instrumentation android:name="cn.ting.music.tests.CatalogChecks" android:targetPackage="cn.ting.music" android:label="听屿目录验证" />
+    <instrumentation android:name="cn.ting.music.tests.DiscoveryChecks" android:targetPackage="cn.ting.music" android:label="听屿分类权益验证" />
+    <instrumentation android:name="cn.ting.music.tests.CacheChecks" android:targetPackage="cn.ting.music" android:label="听屿离线缓存验证" />
+    <instrumentation android:name="cn.ting.music.tests.BufferChecks" android:targetPackage="cn.ting.music" android:label="听屿预缓存验证" />
+    <instrumentation android:name="cn.ting.music.tests.StarChecks" android:targetPackage="cn.ting.music" android:label="TvT 提醒与品牌验证" />
+</manifest>
