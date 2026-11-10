@@ -2,6 +2,12 @@ name: Android release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'assets/**'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.prettierrc.json'
   workflow_dispatch:
     inputs:
       rollback:
@@ -16,6 +22,7 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
+    timeout-minutes: 20
     env:
       TING_UPDATE_REPOSITORY: ${{ github.repository }}
       TING_SIGNING_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -74,14 +81,15 @@ jobs:
           $apk = Get-ChildItem artifacts -Filter '*preview.apk' | Select-Object -First 1
           node scripts/release-manifest.mjs $apk.FullName
       - name: Publish GitHub Release
+        if: "!contains(github.event.head_commit.message, '[skip release]')"
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "build-$env:TING_VERSION_CODE"
           $releaseFiles = @(Get-ChildItem artifacts/release -File | ForEach-Object { $_.FullName })
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          gh release create $tag @releaseFiles --target '${{ github.sha }}' --title "TvT $version · $tag" --generate-notes --latest
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version -replace '\.0$', ''
+          gh release create $tag @releaseFiles --target '${{ github.sha }}' --title "TvT $version" --notes-file config/release-notes.txt --latest
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - name: Remove signing material
         if: always()

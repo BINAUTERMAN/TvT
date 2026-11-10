@@ -19,7 +19,7 @@ export const updates = reactive({
   skip: 0,
   configured: false,
   repository: '',
-  currentVersion: '0.5.2',
+  currentVersion: '5.2',
   checking: false,
   downloading: false,
   state: 'idle',

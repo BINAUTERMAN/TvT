@@ -5,12 +5,13 @@ import { createHash } from 'node:crypto';
 const manifest = fs.readFileSync('android/AndroidManifest.xml', 'utf8');
 const versionCode = Number(manifest.match(/android:versionCode="(\d+)"/)?.[1]);
 const versionName = manifest.match(/android:versionName="([^"]+)"/)?.[1];
-if (!versionCode || !versionName) throw new Error('版本信息无效');
+if (!versionCode || !/^\d+(?:\.\d+){1,3}(?:-[A-Za-z0-9.-]+)?$/.test(versionName ?? ''))
+  throw new Error('版本信息无效');
 const original = process.argv[2];
 if (!original || !fs.existsSync(original))
   throw new Error('请提供已签名的 APK');
 fs.mkdirSync('artifacts/release', { recursive: true });
-const file = `TvT-${versionCode}.apk`;
+const file = `TvT-${versionName}.apk`;
 const destination = path.join('artifacts/release', file);
 fs.copyFileSync(original, destination);
 const sha256 = createHash('sha256')

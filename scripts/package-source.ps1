@@ -1,7 +1,8 @@
 ﻿$ErrorActionPreference = 'Stop'
 $workspacePath = Split-Path -Parent $PSScriptRoot
 Set-Location $workspacePath
-$sourcePath = Join-Path $workspacePath 'build/source-tvt-0.5.2'
+$versionName = ([xml](Get-Content android/AndroidManifest.xml -Raw)).manifest.GetAttribute('versionName', 'http://schemas.android.com/apk/res/android')
+$sourcePath = Join-Path $workspacePath "build/source-tvt-$versionName"
 $verifiedSourcePath = [IO.Path]::GetFullPath($sourcePath)
 $verifiedBuildPath = [IO.Path]::GetFullPath((Join-Path $workspacePath 'build')) + [IO.Path]::DirectorySeparatorChar
 if (!$verifiedSourcePath.StartsWith($verifiedBuildPath, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid source staging path' }
@@ -23,5 +24,5 @@ foreach ($file in $files) {
     New-Item -ItemType Directory -Force (Split-Path -Parent $destination) | Out-Null
     Copy-Item -LiteralPath (Join-Path $workspacePath $file) -Destination $destination -Force
 }
-Compress-Archive -Path "$sourcePath/*" -DestinationPath artifacts/TvT-0.5.2-source.zip -Force
-Get-FileHash artifacts/TvT-0.5.2-preview.apk,artifacts/TvT-0.5.2-source.zip -Algorithm SHA256 | Format-Table -AutoSize
+Compress-Archive -Path "$sourcePath/*" -DestinationPath "artifacts/TvT-$versionName-source.zip" -Force
+Get-FileHash "artifacts/TvT-$versionName-preview.apk","artifacts/TvT-$versionName-source.zip" -Algorithm SHA256 | Format-Table -AutoSize

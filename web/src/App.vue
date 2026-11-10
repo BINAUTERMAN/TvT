@@ -742,7 +742,7 @@ onUnmounted(() => {
               开源许可
             </button>
             <p class="muted">
-              0.5.2 · 安卓预览版
+              {{ updates.currentVersion }} · 安卓版
               <br />
               无广告 SDK，无用户行为分析。
               <br />

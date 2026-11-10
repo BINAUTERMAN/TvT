@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { pathToFileURL } from 'node:url';
 
 const browserPath =
+  process.env.PLAYWRIGHT_EXECUTABLE_PATH ??
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const fixture = JSON.parse(
   await fs.readFile(new URL('./fixtures/search.json', import.meta.url), 'utf8'),

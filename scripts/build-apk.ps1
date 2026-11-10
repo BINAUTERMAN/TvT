@@ -1,6 +1,8 @@
 ﻿$ErrorActionPreference = 'Stop'
 $workspacePath = Split-Path -Parent $PSScriptRoot
 Set-Location $workspacePath
+$versionName = ([xml](Get-Content android/AndroidManifest.xml -Raw)).manifest.GetAttribute('versionName', 'http://schemas.android.com/apk/res/android')
+$apkPath = "artifacts/TvT-$versionName-preview.apk"
 $sdkPath = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $javaPath = if ($env:JAVA_HOME) { $env:JAVA_HOME } elseif (Test-Path "$env:USERPROFILE/.jdks/jbr-17.0.14") { "$env:USERPROFILE/.jdks/jbr-17.0.14" } else { 'C:\Program Files\Android\Android Studio\jbr' }
 $toolPath = Join-Path $sdkPath 'build-tools\34.0.0'
@@ -50,6 +52,6 @@ if (!(Test-Path $keyPath)) {
     if ($env:CI) { throw 'Release signing key must be configured in CI' }
     Run-Checked "$javaPath/bin/keytool.exe" @('-genkeypair','-keystore',$keyPath,'-storepass','android','-keypass','android','-alias','ting-preview','-keyalg','RSA','-keysize','2048','-validity','10000','-dname','CN=Ting Preview,O=Ting,C=CN')
 }
-Run-Checked "$javaPath/bin/java.exe" @('-jar',"$toolPath/lib/apksigner.jar",'sign','--ks',$keyPath,'--ks-pass','env:TING_SIGNING_PASSWORD','--out','artifacts/TvT-0.5.2-preview.apk','build/aligned.apk')
-Run-Checked "$javaPath/bin/java.exe" @('-jar',"$toolPath/lib/apksigner.jar",'verify','--verbose','artifacts/TvT-0.5.2-preview.apk')
-Write-Host 'APK 已生成：artifacts/TvT-0.5.2-preview.apk'
+Run-Checked "$javaPath/bin/java.exe" @('-jar',"$toolPath/lib/apksigner.jar",'sign','--ks',$keyPath,'--ks-pass','env:TING_SIGNING_PASSWORD','--out',$apkPath,'build/aligned.apk')
+Run-Checked "$javaPath/bin/java.exe" @('-jar',"$toolPath/lib/apksigner.jar",'verify','--verbose',$apkPath)
+Write-Host "APK 已生成：$apkPath"
