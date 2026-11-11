@@ -6,9 +6,15 @@
 
 <p align="center">🎧 一个简洁、专注于听歌的第三方 Android 音乐客户端。</p>
 
-<p align="center">Android 8.0+ · Vue 3 · TypeScript · Java · GPL-2.0-only</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-8.0%2B-brightgreen?logo=android" alt="Android 8.0+">
+  <img src="https://img.shields.io/badge/Vue-3.5-brightgreen?logo=vuedotjs" alt="Vue 3">
+  <img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk" alt="Java">
+  <img src="https://img.shields.io/badge/License-GPL--2.0--only-orange" alt="License">
+</p>
 
-TvT 基于酷狗音乐的账号与内容服务，结合 Web 界面和 Android 原生媒体能力，提供音乐发现、搜索、播放、歌词、收藏同步与本地缓存。支持手机和平板，适配浅色与深色外观。
+TvT 基于酷狗音乐及酷狗音乐概念版的账号与内容服务，结合 Web 界面和 Android 原生媒体能力，提供音乐发现、搜索、播放、歌词、收藏同步与本地缓存。支持手机和平板，适配浅色与深色外观。
 
 **TvT 是独立开源项目，并非酷狗的官方客户端。**
 
