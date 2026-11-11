@@ -1911,7 +1911,7 @@ test('播放五首后的 Star 提醒排队显示，两种选择均只出现一�
       );
       assert.equal(await page.locator('.star-prompt').count(), 0);
       await page
-        .getByText('桌面歌词需要悬浮窗权限。目前效果很差，等待更新优化。', {
+          .getByText('桌面歌词需要悬浮窗权限，支持自定义配色、布局和边缘吸附。', {
           exact: true,
         })
         .waitFor();

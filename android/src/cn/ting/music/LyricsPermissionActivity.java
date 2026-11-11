@@ -6,7 +6,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
 
-/** 通知点击直接进入系统授权，返回后只开启桌面歌词。 */
+/** 返回系统授权后，仅开启本次选择的歌词功能。 */
 public final class LyricsPermissionActivity extends Activity {
   @Override
   public void onCreate(Bundle state) {
@@ -29,12 +29,20 @@ public final class LyricsPermissionActivity extends Activity {
 
   private void enable() {
     if (Settings.canDrawOverlays(this)) {
-      getSharedPreferences("preferences", MODE_PRIVATE)
-          .edit()
-          .putBoolean("floatingLyrics", true)
-          .putBoolean("lyricsLocked", false)
-          .apply();
-      if (PlaybackService.instance != null) PlaybackService.instance.loadFloatingLyrics();
+      if (getIntent().getBooleanExtra("statusLyrics", false)) {
+        getSharedPreferences("preferences", MODE_PRIVATE)
+            .edit()
+            .putBoolean("lyricsStatusEnabled", true)
+            .apply();
+        if (PlaybackService.instance != null) PlaybackService.instance.configureStatusBarLyrics();
+      } else {
+        getSharedPreferences("preferences", MODE_PRIVATE)
+            .edit()
+            .putBoolean("floatingLyrics", true)
+            .putBoolean("lyricsLocked", false)
+            .apply();
+        if (PlaybackService.instance != null) PlaybackService.instance.loadFloatingLyrics();
+      }
     }
     finish();
   }

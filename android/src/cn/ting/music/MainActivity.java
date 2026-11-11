@@ -518,12 +518,33 @@ public final class MainActivity extends Activity {
         handler.post(
             () -> {
               try {
+                if (action.equals("statusLyricsSettings") || action.equals("statusLyricsPreview")) {
+                  JSONObject updates = new JSONObject(source);
+                  if ((updates.optBoolean("enabled") || action.equals("statusLyricsPreview"))
+                      && !android.provider.Settings.canDrawOverlays(MainActivity.this)) {
+                    startActivity(
+                        new Intent(MainActivity.this, LyricsPermissionActivity.class)
+                            .putExtra("statusLyrics", true));
+                    resolve(id, null, "请允许悬浮窗权限，返回后可预览状态栏歌词");
+                    return;
+                  }
+                  StatusBarLyrics.settings(MainActivity.this, updates);
+                  if (PlaybackService.instance != null) {
+                    if (action.equals("statusLyricsPreview"))
+                      PlaybackService.instance.previewStatusBarLyrics();
+                    else if (updates.length() > 0)
+                      PlaybackService.instance.configureStatusBarLyrics(
+                          updates.optBoolean("enabled"));
+                  }
+                  resolve(id, StatusBarLyrics.settings(MainActivity.this, new JSONObject()), null);
+                  return;
+                }
                 if (action.equals("floatingSettings")) {
-                  JSONObject value =
-                      FloatingLyrics.settings(MainActivity.this, new JSONObject(source));
-                  if (PlaybackService.instance != null)
-                    PlaybackService.instance.refreshFloatingLyrics();
-                  resolve(id, value, null);
+                  JSONObject updates = new JSONObject(source);
+                  FloatingLyrics.settings(MainActivity.this, updates);
+                  if (updates.length() > 0 && PlaybackService.instance != null)
+                    PlaybackService.instance.configureFloatingLyrics(updates);
+                  resolve(id, FloatingLyrics.settings(MainActivity.this, new JSONObject()), null);
                   return;
                 }
                 if (action.equals("overlay")) {

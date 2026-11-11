@@ -1,4 +1,4 @@
-﻿param([switch]$NetworkOnly,[switch]$CatalogOnly,[switch]$DiscoveryOnly,[switch]$CacheOnly,[switch]$BuildOnly)
+param([switch]$NetworkOnly,[switch]$CatalogOnly,[switch]$DiscoveryOnly,[switch]$CacheOnly,[switch]$BuildOnly)
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 $sdkPath = "$env:LOCALAPPDATA/Android/Sdk"
@@ -7,7 +7,7 @@ $javaPath = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin' } else { "$env:
 New-Item -ItemType Directory -Force build/device/classes | Out-Null
 & "$toolPath/aapt2.exe" link -o build/device/base.apk -I "$sdkPath/platforms/android-34/android.jar" --manifest tests/device/AndroidManifest.xml
 if ($LASTEXITCODE -ne 0) { throw 'Test resource compile failed' }
-& "$javaPath/javac.exe" -encoding UTF-8 -source 8 -target 8 -cp "$sdkPath/platforms/android-34/android.jar" -d build/device/classes tests/device/DeviceSmoke.java tests/device/NetworkDiagnostics.java tests/device/CatalogChecks.java tests/device/DiscoveryChecks.java tests/device/CacheChecks.java tests/device/BufferChecks.java tests/device/StarChecks.java tests/device/FocusProbeActivity.java
+& "$javaPath/javac.exe" -encoding UTF-8 -source 8 -target 8 -cp "$sdkPath/platforms/android-34/android.jar" -d build/device/classes tests/device/DeviceSmoke.java tests/device/NetworkDiagnostics.java tests/device/CatalogChecks.java tests/device/DiscoveryChecks.java tests/device/CacheChecks.java tests/device/BufferChecks.java tests/device/StarChecks.java tests/device/FocusProbeActivity.java tests/device/LyricsChecks.java tests/device/LyricsInteractionChecks.java
 if ($LASTEXITCODE -ne 0) { throw 'Test compile failed' }
 & "$javaPath/jar.exe" cf build/device/classes.jar -C build/device/classes .
 & "$javaPath/java.exe" -cp "$toolPath/lib/d8.jar" com.android.tools.r8.D8 --lib "$sdkPath/platforms/android-34/android.jar" --min-api 26 --output build/device build/device/classes.jar

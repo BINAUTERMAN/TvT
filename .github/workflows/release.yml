@@ -48,7 +48,8 @@ jobs:
           [IO.File]::WriteAllBytes($env:TING_KEYSTORE_PATH, [Convert]::FromBase64String($env:KEYSTORE_BASE64))
           & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" 'platforms;android-34' 'build-tools;34.0.0'
           if ($LASTEXITCODE -ne 0) { throw 'Android SDK setup failed' }
-          $sequence = 100000 + [long]'${{ github.run_number }}'
+          $minimumSequence = [long]([xml](Get-Content android/AndroidManifest.xml -Raw)).manifest.GetAttribute('versionCode', 'http://schemas.android.com/apk/res/android')
+          $sequence = [Math]::Max($minimumSequence, 100000 + [long]'${{ github.run_number }}')
           "TING_VERSION_CODE=$sequence" >> $env:GITHUB_ENV
       - run: npm ci
       - name: Verify interface and protocol
