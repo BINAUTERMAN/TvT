@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 const props = withDefaults(
   defineProps<{
     modelValue: number;
@@ -16,6 +16,9 @@ const emit = defineEmits<{
   change: [value: number];
 }>();
 const input = ref<HTMLInputElement>();
+const fill = computed(
+  () => `${((props.modelValue - props.min) / (props.max - props.min)) * 100}%`,
+);
 let gesture:
   | { id: number; x: number; value: number; changed: boolean }
   | undefined;
@@ -104,6 +107,7 @@ function adjust(direction: number) {
       :step="step"
       :value="modelValue"
       :disabled="disabled"
+      :style="{ '--range-fill': fill }"
       @pointerdown="down"
       @pointermove="move"
       @pointerup="end($event)"
@@ -127,25 +131,60 @@ function adjust(direction: number) {
 .lyrics-range-control {
   display: flex;
   align-items: center;
-  gap: 3px;
-  width: 58%;
-  min-width: 140px;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
 }
 button {
-  flex: 0 0 32px;
+  flex: 0 0 44px;
   height: 44px;
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
   font-size: 20px;
 }
 input {
+  appearance: none;
   width: 0;
   flex: 1;
   min-width: 0;
   height: 44px;
   margin: 0;
   padding: 0;
-  accent-color: var(--ink);
+  background: transparent;
+  cursor: ew-resize;
   touch-action: pan-y;
+}
+input::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    #007aff 0 var(--range-fill),
+    var(--line) var(--range-fill) 100%
+  );
+}
+input::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7.5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #00000008;
+  box-shadow: 0 1px 5px #00000026;
+}
+input:focus-visible {
+  outline: 2px solid #007aff;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+button:active:not(:disabled) {
+  background: var(--line);
+}
+button:disabled,
+input:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 </style>

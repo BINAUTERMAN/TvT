@@ -17,6 +17,9 @@ import org.json.JSONObject;
 
 /** 歌词按时间点更新，锁定后不拦截桌面触摸。 */
 final class FloatingLyrics {
+  static final String DEFAULT_HIGHLIGHT = "#35baff";
+  static final String DEFAULT_TEXT = "#c5ebff";
+  static final String DEFAULT_SECONDARY = "#b1d9f0";
   private final Context context;
   private final WindowManager windows;
   private LinearLayout panel;
@@ -38,6 +41,7 @@ final class FloatingLyrics {
   private ValueAnimator snapAnimation;
   private ValueAnimator geometryAnimation;
   private boolean appliedLocked;
+  private boolean closeWhenCollapsed;
   private final Runnable displayRefresh =
       () -> {
         if (panel != null) updateDisplay(panel.getRootWindowInsets());
@@ -46,6 +50,7 @@ final class FloatingLyrics {
   FloatingLyrics(Context context) {
     this.context = LyricsScreen.windowContext(context);
     windows = (WindowManager) this.context.getSystemService(Context.WINDOW_SERVICE);
+    upgradeDefaultPalette(preferences());
   }
 
   private SharedPreferences preferences() {
@@ -62,6 +67,7 @@ final class FloatingLyrics {
 
   static JSONObject settings(Context context, JSONObject updates) throws Exception {
     SharedPreferences saved = context.getSharedPreferences("preferences", Context.MODE_PRIVATE);
+    upgradeDefaultPalette(saved);
     SharedPreferences.Editor editor = saved.edit();
     if (updates.optBoolean("resetDefaults")) {
       for (String key :
@@ -156,8 +162,8 @@ final class FloatingLyrics {
         .put("width", saved.getInt("lyricsWidth", 88))
         .put("accent", saved.getString("lyricsAccent", "cyan"))
         .put("highlightColor", saved.getString("lyricsHighlightColor", accentColor(saved)))
-        .put("textColor", saved.getString("lyricsTextColor", "#8fffad"))
-        .put("secondaryColor", saved.getString("lyricsSecondaryColor", "#dedee5"))
+        .put("textColor", saved.getString("lyricsTextColor", DEFAULT_TEXT))
+        .put("secondaryColor", saved.getString("lyricsSecondaryColor", DEFAULT_SECONDARY))
         .put("backgroundColor", saved.getString("lyricsBackgroundColor", "#1c1c20"))
         .put("opacity", saved.getInt("lyricsOpacity", 100))
         .put("backgroundOpacity", saved.getInt("lyricsBackgroundOpacity", 0))
@@ -185,7 +191,21 @@ final class FloatingLyrics {
     String value = saved.getString("lyricsAccent", "cyan");
     return value.equals("mint")
         ? "#c0f4dc"
-        : value.equals("white") ? "#ffffff" : value.equals("gold") ? "#ffe4ac" : "#00d9e9";
+        : value.equals("white") ? "#ffffff" : value.equals("gold") ? "#ffe4ac" : DEFAULT_HIGHLIGHT;
+  }
+
+  private static void upgradeDefaultPalette(SharedPreferences saved) {
+    // 只迁移旧默认组合，自定义配色保持不变。
+    if (!"#00d9e9".equals(saved.getString("lyricsHighlightColor", ""))
+        || !"#8fffad".equals(saved.getString("lyricsTextColor", ""))) return;
+    SharedPreferences.Editor editor =
+        saved
+            .edit()
+            .putString("lyricsHighlightColor", DEFAULT_HIGHLIGHT)
+            .putString("lyricsTextColor", DEFAULT_TEXT);
+    if ("#dedee5".equals(saved.getString("lyricsSecondaryColor", "#dedee5")))
+      editor.putString("lyricsSecondaryColor", DEFAULT_SECONDARY);
+    editor.apply();
   }
 
   void refresh() {
@@ -307,10 +327,11 @@ final class FloatingLyrics {
                 }
 
                 public void close() {
-                  preferences().edit().putBoolean("floatingLyrics", false).apply();
-                  if (PlaybackService.instance != null)
-                    PlaybackService.instance.refreshFloatingLyrics();
-                  else hide();
+                  closeLyrics();
+                }
+
+                public void collapse() {
+                  transitionEditor(false, false);
                 }
               });
       tools.setVisibility(editing ? View.VISIBLE : View.GONE);
@@ -378,7 +399,7 @@ final class FloatingLyrics {
             boolean moved;
 
             public boolean onTouch(View view, MotionEvent event) {
-              if (locked() || geometryAnimation != null) return false;
+              if (locked()) return false;
               if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 cancelSnap();
                 startX = event.getRawX();
@@ -386,7 +407,7 @@ final class FloatingLyrics {
                 originX = layout.x;
                 originY = layout.y;
                 moved = false;
-                dragging = true;
+                dragging = geometryAnimation == null;
                 return true;
               }
               if (event.getAction() == MotionEvent.ACTION_MOVE && dragging) {
@@ -431,31 +452,7 @@ final class FloatingLyrics {
   }
 
   private void toggleEditor() {
-    editing = !editing;
-    tools.animate().cancel();
-    if (editing) {
-      tools.setVisibility(View.VISIBLE);
-      tools.setAlpha(0);
-      tools.animate().alpha(1).setDuration(motionEnabled() ? 120 : 0).start();
-    } else {
-      LyricsControls currentTools = tools;
-      tools
-          .animate()
-          .alpha(0)
-          .setDuration(motionEnabled() ? 120 : 0)
-          .withEndAction(
-              () -> {
-                if (tools == currentTools && !editing) tools.setVisibility(View.GONE);
-              })
-          .start();
-    }
-    GradientDrawable background = (GradientDrawable) panel.getBackground();
-    int alpha =
-        Math.round(
-            (editing ? 75 : preferences().getInt("lyricsBackgroundOpacity", 0)) * 255 / 100f);
-    background.setColor((color("backgroundColor", "#1c1c20") & 0xffffff) | (alpha << 24));
-    layout.width = windowWidth();
-    updateLayout();
+    transitionEditor(!editing, locked());
   }
 
   boolean applyLockChange() {
@@ -465,8 +462,13 @@ final class FloatingLyrics {
   }
 
   private void transitionLock(boolean lock) {
+    transitionEditor(!lock, lock);
+  }
+
+  private void transitionEditor(boolean expand, boolean lock) {
     if (panel == null || tools == null) return;
-    if (geometryAnimation != null && appliedLocked == lock) return;
+    if (editing == expand && appliedLocked == lock) return;
+    if (expand) closeWhenCollapsed = false;
     cancelSnap();
     if (geometryAnimation != null) {
       ValueAnimator previous = geometryAnimation;
@@ -475,7 +477,6 @@ final class FloatingLyrics {
     }
     tools.animate().cancel();
     appliedLocked = lock;
-    boolean expand = !lock;
     editing = expand;
     int fromX = layout.x, fromY = layout.y;
     int fromWidth = panel.getWidth(), fromHeight = panel.getHeight();
@@ -586,6 +587,23 @@ final class FloatingLyrics {
     else layout.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
     layout.alpha = windowAlpha(lock);
     updateLayout();
+    if (closeWhenCollapsed && !editing) {
+      closeWhenCollapsed = false;
+      closeLyrics();
+    }
+  }
+
+  private void closeLyrics() {
+    if (panel != null && editing) {
+      transitionEditor(false, false);
+      if (geometryAnimation != null) {
+        closeWhenCollapsed = true;
+        return;
+      }
+    }
+    preferences().edit().putBoolean("floatingLyrics", false).apply();
+    if (PlaybackService.instance != null) PlaybackService.instance.refreshFloatingLyrics();
+    else hide();
   }
 
   private void cancelTransition() {
@@ -599,7 +617,7 @@ final class FloatingLyrics {
   private int windowWidth() {
     int preferred = Math.round(bounds.width() * preferences().getInt("lyricsWidth", 88) / 100f);
     return Math.min(
-        bounds.width(), editing && !locked() ? Math.max(dp(264), preferred) : preferred);
+        bounds.width(), editing && !locked() ? Math.max(dp(304), preferred) : preferred);
   }
 
   private Rect screenBounds() {
@@ -701,6 +719,7 @@ final class FloatingLyrics {
   }
 
   void hide() {
+    closeWhenCollapsed = false;
     if (panel != null) panel.removeCallbacks(displayRefresh);
     cancelTransition();
     cancelSnap();

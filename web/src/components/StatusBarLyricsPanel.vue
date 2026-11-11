@@ -177,9 +177,25 @@ onUnmounted(() => {
 </template>
 <style scoped>
 .status-lyrics-settings {
-  border-top: 1px solid var(--line);
-  margin-top: 24px;
-  padding-top: 20px;
+  padding: 0 16px 16px;
+}
+.status-lyrics-settings h3 {
+  display: none;
+}
+.status-lyrics-settings > p {
+  font-size: 12px;
+}
+.setting-row {
+  min-height: 54px;
+  padding: 10px 0;
+  gap: 12px;
+  font-size: 13px;
+}
+.setting-row input[type='checkbox']:checked {
+  background: #007aff;
+}
+.setting-row input[type='checkbox']:checked::after {
+  background: #fff;
 }
 fieldset {
   padding: 0;
@@ -188,11 +204,26 @@ fieldset {
   min-width: 0;
 }
 .status-range {
-  gap: 10px;
+  display: block;
+  padding: 14px 0 6px;
 }
 .status-range > span {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.secondary-button {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 13px;
+  color: #007aff;
+  background: var(--bg);
+  font-size: 12px;
+}
+.text-button {
+  min-height: 44px;
+  color: #007aff;
+  font-size: 12px;
 }
 small {
   color: var(--muted);

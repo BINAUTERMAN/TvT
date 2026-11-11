@@ -55,8 +55,8 @@ final class LyricsOverlayView extends View {
         readColor(
             saved,
             statusBar ? "lyricsStatusColor" : "lyricsTextColor",
-            statusBar ? "#ffffff" : "#8fffad");
-    secondary = readColor(saved, "lyricsSecondaryColor", "#dedee5");
+            statusBar ? "#ffffff" : FloatingLyrics.DEFAULT_TEXT);
+    secondary = readColor(saved, "lyricsSecondaryColor", FloatingLyrics.DEFAULT_SECONDARY);
     outline = statusBar ? 0 : saved.getInt("lyricsOutline", 1);
     gradient = !statusBar && saved.getBoolean("lyricsGradient", true);
     smooth = saved.getBoolean("lyricsSmooth", true) && ValueAnimator.areAnimatorsEnabled();

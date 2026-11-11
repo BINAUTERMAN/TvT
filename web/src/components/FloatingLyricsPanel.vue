@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { native } from '../bridge';
 import LyricsRange from './LyricsRange.vue';
 import StatusBarLyricsPanel from './StatusBarLyricsPanel.vue';
+import LyricsPreview from './LyricsPreview.vue';
 import { preferences, updatePreference, notify } from '../store';
 
 const settings = reactive({
@@ -11,9 +12,9 @@ const settings = reactive({
   locked: false,
   enabled: false,
   permission: false,
-  highlightColor: '#00d9e9',
-  textColor: '#8fffad',
-  secondaryColor: '#dedee5',
+  highlightColor: '#35baff',
+  textColor: '#c5ebff',
+  secondaryColor: '#b1d9f0',
   backgroundColor: '#1c1c20',
   opacity: 100,
   backgroundOpacity: 0,
@@ -60,10 +61,10 @@ const colors = [
 ] as const;
 const presets = [
   {
-    name: '清透',
-    highlightColor: '#00d9e9',
-    textColor: '#8fffad',
-    secondaryColor: '#dedee5',
+    name: '经典蓝',
+    highlightColor: '#35baff',
+    textColor: '#c5ebff',
+    secondaryColor: '#b1d9f0',
   },
   {
     name: '暖金',
@@ -91,6 +92,7 @@ const presets = [
   },
 ] as const;
 const previewStyle = computed(() => ({
+  '--preview-font': `${settings.size}px`,
   width: `${settings.width}%`,
   color: settings.textColor,
   backgroundColor: `${settings.backgroundColor}${Math.round(
@@ -199,9 +201,10 @@ onUnmounted(() => {
 
 <template>
   <section class="floating-settings">
-    <h2>桌面歌词</h2>
-    <p class="muted">把喜欢的字色和位置，留在桌面上。</p>
-    <div class="lyrics-preview-stage" aria-label="桌面歌词外观预览">
+    <header class="lyrics-settings-header">
+      <h2>桌面歌词</h2>
+    </header>
+    <LyricsPreview>
       <div class="floating-preview" :style="previewStyle">
         <strong>
           <span :style="highlightStyle">让音乐</span>
@@ -221,27 +224,65 @@ onUnmounted(() => {
           }}
         </small>
       </div>
-    </div>
-    <p class="muted">
-      静态外观预览；实际字体随系统缩放，锁定后系统可能降低不透明度以允许触摸穿透。
-    </p>
+    </LyricsPreview>
     <button v-if="failed" class="text-button" @click="load">
       重新读取设置
     </button>
     <fieldset :disabled="!ready || busy" :aria-busy="busy">
-      <label class="setting-row">
-        <span>显示桌面歌词</span>
-        <input
-          type="checkbox"
-          :checked="preferences.floatingLyrics"
-          @change="enable"
-        />
-      </label>
-      <p v-if="ready && !settings.permission" class="muted" role="status">
-        尚未获得悬浮窗权限，开启时会进入系统授权页面。
+      <div class="lyrics-group">
+        <label class="setting-row">
+          <span>显示桌面歌词</span>
+          <input
+            type="checkbox"
+            :checked="preferences.floatingLyrics"
+            @change="enable"
+          />
+        </label>
+        <label class="setting-row">
+          <span>显示模式</span>
+          <select
+            aria-label="歌词显示模式"
+            :value="settings.mode"
+            @change="changeSelect($event, 'mode')"
+          >
+            <option value="single">单行原文</option>
+            <option value="translation">原文与译文</option>
+            <option value="next">双行交替</option>
+          </select>
+        </label>
+      </div>
+      <p
+        v-if="ready && !settings.permission"
+        class="lyrics-footnote"
+        role="status"
+      >
+        开启时需要授予悬浮窗权限。
       </p>
+      <h3>常用调整</h3>
+      <div class="lyrics-group">
+        <div
+          v-for="range in ranges.slice(0, 3)"
+          :key="range.key"
+          class="lyrics-slider-row"
+        >
+          <div class="lyrics-slider-title">
+            <span>{{ range.label }}</span>
+            <output>
+              {{ settings[range.key] }}
+              <small>{{ range.unit }}</small>
+            </output>
+          </div>
+          <LyricsRange
+            v-model="settings[range.key]"
+            :label="`歌词${range.label}`"
+            :min="range.min"
+            :max="range.max"
+            @change="update({ [range.key]: $event })"
+          />
+        </div>
+      </div>
       <h3>配色</h3>
-      <div class="theme-options lyrics-presets" aria-label="歌词配色预设">
+      <div class="lyrics-presets" aria-label="歌词配色预设">
         <button
           v-for="preset in presets"
           :key="preset.name"
@@ -262,179 +303,215 @@ onUnmounted(() => {
           {{ preset.name }}
         </button>
       </div>
-      <div class="lyrics-colors">
-        <label v-for="color in colors" :key="color.key" class="setting-row">
-          <span>{{ color.label }}</span>
+      <details class="lyrics-details">
+        <summary>
+          文字与自定义配色
+          <span>对齐、字效与细节</span>
+        </summary>
+        <div class="lyrics-group">
+          <div class="lyrics-colors">
+            <label v-for="color in colors" :key="color.key" class="setting-row">
+              <span>{{ color.label }}</span>
+              <input
+                type="color"
+                :aria-label="color.label"
+                :value="settings[color.key]"
+                @input="changeColor($event, color.key)"
+                @change="update({ [color.key]: settings[color.key] })"
+              />
+            </label>
+          </div>
+          <label class="setting-row">
+            <span>文字对齐</span>
+            <select
+              aria-label="歌词文字对齐"
+              :value="settings.align"
+              @change="changeSelect($event, 'align')"
+            >
+              <option value="left">居左</option>
+              <option value="center">居中</option>
+              <option value="right">居右</option>
+            </select>
+          </label>
+          <label
+            v-for="toggle in [
+              { key: 'bold' as const, label: '加粗文字' },
+              { key: 'gradient' as const, label: '字色渐变' },
+              { key: 'smooth' as const, label: '平滑逐字与长句移动' },
+            ]"
+            :key="toggle.key"
+            class="setting-row"
+          >
+            <span>{{ toggle.label }}</span>
+            <input
+              type="checkbox"
+              :checked="settings[toggle.key]"
+              @change="changeToggle($event, toggle.key)"
+            />
+          </label>
+          <div
+            v-for="range in ranges.slice(3, 8)"
+            :key="range.key"
+            class="lyrics-slider-row"
+            :class="{
+              'lyrics-range-disabled':
+                range.key === 'secondarySize' &&
+                settings.mode !== 'translation',
+            }"
+          >
+            <div class="lyrics-slider-title">
+              <span>{{ range.label }}</span>
+              <output>
+                {{ settings[range.key] }}
+                <small>{{ range.unit }}</small>
+              </output>
+            </div>
+            <LyricsRange
+              v-model="settings[range.key]"
+              :label="`歌词${range.label}`"
+              :min="range.min"
+              :max="range.max"
+              :disabled="
+                range.key === 'secondarySize' && settings.mode !== 'translation'
+              "
+              @change="update({ [range.key]: $event })"
+            />
+          </div>
+        </div>
+      </details>
+      <h3>位置与操作</h3>
+      <div class="lyrics-group">
+        <label class="setting-row">
+          <span>靠近屏幕边缘自动吸附</span>
           <input
-            type="color"
-            :aria-label="color.label"
-            :value="settings[color.key]"
-            @input="changeColor($event, color.key)"
-            @change="update({ [color.key]: settings[color.key] })"
+            type="checkbox"
+            :checked="settings.snap"
+            @change="changeToggle($event, 'snap')"
           />
         </label>
-      </div>
-      <h3>文字与布局</h3>
-      <label class="setting-row">
-        <span>显示模式</span>
-        <select
-          aria-label="歌词显示模式"
-          :value="settings.mode"
-          @change="changeSelect($event, 'mode')"
+        <label class="setting-row">
+          <span>锁定位置，触摸穿透</span>
+          <input
+            type="checkbox"
+            :checked="settings.locked"
+            @change="changeToggle($event, 'locked')"
+          />
+        </label>
+        <div
+          class="lyrics-slider-row"
+          :class="{ 'lyrics-range-disabled': !settings.snap }"
         >
-          <option value="single">单行原文</option>
-          <option value="translation">原文与译文 / 下一句</option>
-          <option value="next">双行交替（原文与下一句）</option>
-        </select>
-      </label>
-      <label class="setting-row">
-        <span>文字对齐</span>
-        <select
-          aria-label="歌词文字对齐"
-          :value="settings.align"
-          @change="changeSelect($event, 'align')"
-        >
-          <option value="left">居左</option>
-          <option value="center">居中</option>
-          <option value="right">居右</option>
-        </select>
-      </label>
-      <label class="setting-row">
-        <span>加粗文字</span>
-        <input
-          type="checkbox"
-          :checked="settings.bold"
-          @change="changeToggle($event, 'bold')"
-        />
-      </label>
-      <label class="setting-row">
-        <span>字色渐变</span>
-        <input
-          type="checkbox"
-          :checked="settings.gradient"
-          @change="changeToggle($event, 'gradient')"
-        />
-      </label>
-      <label class="setting-row">
-        <span>平滑逐字与长句移动</span>
-        <input
-          type="checkbox"
-          :checked="settings.smooth"
-          @change="changeToggle($event, 'smooth')"
-        />
-      </label>
-      <p class="muted">
-        有真实逐字时间时连续扫色，长句随演唱进度横移；双行上下交替接唱。无逐字时间时整句高亮。暂停和灭屏时停止动画。
-      </p>
-      <div
-        v-for="range in ranges"
-        :key="range.key"
-        class="setting-row lyrics-range"
-        :class="{
-          'lyrics-range-disabled':
-            (range.key === 'snapDistance' && !settings.snap) ||
-            (range.key === 'secondarySize' && settings.mode !== 'translation'),
-        }"
-      >
-        <span>
-          {{ range.label }}
-          <small>{{ settings[range.key] }}{{ range.unit }}</small>
-        </span>
-        <LyricsRange
-          v-model="settings[range.key]"
-          :label="`歌词${range.label}`"
-          :min="range.min"
-          :max="range.max"
-          :disabled="
-            (range.key === 'snapDistance' && !settings.snap) ||
-            (range.key === 'secondarySize' && settings.mode !== 'translation')
-          "
-          @change="update({ [range.key]: $event })"
-        />
+          <div class="lyrics-slider-title">
+            <span>边缘吸附距离</span>
+            <output>
+              {{ settings.snapDistance }}
+              <small>dp</small>
+            </output>
+          </div>
+          <LyricsRange
+            v-model="settings.snapDistance"
+            label="歌词边缘吸附距离"
+            :min="8"
+            :max="64"
+            :disabled="!settings.snap"
+            @change="update({ snapDistance: $event })"
+          />
+        </div>
       </div>
-      <p class="muted">
-        拖动滑块调节，或使用两侧 − / + 精调；点按轨道不会改变数值。
+      <p class="lyrics-footnote">
+        点按歌词展开或收起控制，拖动调整位置。横竖屏分别记忆；锁定后可从播放通知解锁。
       </p>
-      <h3>位置与操作</h3>
-      <label class="setting-row">
-        <span>靠近屏幕边缘自动吸附</span>
-        <input
-          type="checkbox"
-          :checked="settings.snap"
-          @change="changeToggle($event, 'snap')"
-        />
-      </label>
-      <label class="setting-row">
-        <span>锁定位置，触摸穿透</span>
-        <input
-          type="checkbox"
-          :checked="settings.locked"
-          @change="changeToggle($event, 'locked')"
-        />
-      </label>
-      <p class="muted">
-        拖动歌词调整位置，松手或锁定时靠近四边会平滑吸附。横竖屏分别记忆位置，避让系统栏与刘海；宽度按可用屏幕比例适配手机和平板。
-      </p>
-      <p class="muted">
-        轻点歌词展开控制面板，再点收起；背景设为 0%
-        时收起后只保留文字。锁定后可从播放通知中的歌词按钮解锁，也可回到这里关闭锁定。
-      </p>
-      <button class="text-button" @click="update({ resetPosition: true })">
-        重置横竖屏位置
-      </button>
-      <button class="text-button lyrics-reset" @click="resetConfirm = true">
-        恢复默认参数
-      </button>
+      <div class="lyrics-actions">
+        <button @click="update({ resetPosition: true })">重置横竖屏位置</button>
+        <button @click="resetConfirm = true">恢复默认参数</button>
+      </div>
       <div
         v-if="resetConfirm"
         class="lyrics-reset-confirm"
         role="group"
         aria-label="恢复默认参数确认"
       >
-        <p>恢复默认外观和横竖屏位置，并解除锁定。桌面歌词开关保持当前状态。</p>
-        <button class="secondary-button" @click="resetConfirm = false">
-          取消恢复
-        </button>
-        <button class="primary" @click="resetDefaults">确认恢复默认</button>
+        <p>恢复默认外观、位置并解除锁定，保留开启状态。</p>
+        <div class="lyrics-actions">
+          <button @click="resetConfirm = false">取消恢复</button>
+          <button class="confirm-reset" @click="resetDefaults">
+            确认恢复默认
+          </button>
+        </div>
       </div>
     </fieldset>
-    <StatusBarLyricsPanel />
+    <details class="lyrics-details status-details">
+      <summary>
+        状态栏歌词
+        <span>小号单行歌词与位置</span>
+      </summary>
+      <StatusBarLyricsPanel />
+    </details>
+    <p class="lyrics-footnote">
+      预览展示静态外观；实际字号随系统缩放。点按滑条轨道不会修改参数。
+    </p>
   </section>
 </template>
-
 <style scoped>
-.floating-settings fieldset {
+.floating-settings {
+  --lyrics-tint: #007aff;
+}
+.lyrics-settings-header h2 {
+  margin-bottom: 6px;
+}
+.lyrics-settings-header p {
+  margin: 0;
+  font-size: 13px;
+}
+fieldset {
   border: 0;
   margin: 0;
   padding: 0;
   min-width: 0;
 }
-.floating-settings h3 {
-  margin: 24px 0 8px;
-  font-size: 15px;
+h3 {
+  margin: 22px 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
 }
-.lyrics-preview-stage {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 156px;
-  margin-top: 16px;
-  padding: 16px 0;
-  border-radius: 20px;
-  background: repeating-linear-gradient(
-    135deg,
-    var(--surface) 0 12px,
-    var(--soft) 12px 24px
-  );
-  overflow: hidden;
+.lyrics-group {
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 0 16px;
+}
+.lyrics-group > :last-child {
+  border-bottom: 0;
+}
+.setting-row {
+  min-height: 54px;
+  padding: 10px 0;
+  gap: 12px;
+  font-size: 14px;
+}
+.setting-row input[type='checkbox']:checked {
+  background: var(--lyrics-tint);
+}
+.setting-row input[type='checkbox']:checked::after {
+  background: #fff;
+}
+.setting-row select {
+  max-width: 55%;
+  min-height: 40px;
+  padding: 8px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--muted);
 }
 .floating-preview {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   margin: 0;
-  padding: 12px;
-  box-sizing: border-box;
-  border-radius: 18px;
   box-shadow: none;
+  padding: 10px;
+  box-sizing: border-box;
+  border-radius: 14px;
   overflow-wrap: anywhere;
 }
 .floating-preview strong {
@@ -445,74 +522,149 @@ onUnmounted(() => {
 .floating-preview small {
   line-height: 1.4;
 }
+.lyrics-slider-row {
+  padding: 14px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+.lyrics-slider-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.lyrics-slider-title output {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lyrics-slider-title small {
+  margin-left: 3px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.lyrics-range-disabled {
+  opacity: 0.45;
+}
 .lyrics-presets {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
 }
 .lyrics-presets button {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 10px 4px;
+  gap: 8px;
+  min-height: 64px;
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 10px 2px;
+  font-size: 11px;
+  border: 1px solid transparent;
+}
+.lyrics-presets button[aria-pressed='true'] {
+  border-color: var(--lyrics-tint);
+  color: var(--lyrics-tint);
 }
 .lyrics-presets i {
-  width: 10px;
-  height: 10px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 1px solid #0002;
-  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px #00000012;
+}
+.lyrics-details {
+  margin: 16px 0;
+  border-radius: 18px;
+  background: var(--surface);
+}
+.lyrics-details summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 60px;
+  padding: 14px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  list-style: none;
+}
+.lyrics-details summary::-webkit-details-marker {
+  display: none;
+}
+.lyrics-details summary > span {
+  flex: 1;
+  text-align: right;
+  color: var(--muted);
+  font-size: 10px;
+}
+.lyrics-details summary::after {
+  content: '›';
+  color: var(--muted);
+  font-size: 22px;
+  transform: rotate(0);
+}
+.lyrics-details[open] > summary::after {
+  transform: rotate(90deg);
 }
 .lyrics-colors {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 16px;
+  gap: 0 14px;
+}
+.lyrics-colors .setting-row {
+  font-size: 12px;
 }
 .lyrics-colors input {
-  width: 44px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: 0;
-  padding: 2px;
+  border-radius: 50%;
   background: transparent;
 }
-.setting-row select {
-  max-width: 62%;
-  min-height: 40px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 4px;
-}
-.lyrics-range {
-  gap: 10px;
-}
-.lyrics-range > span {
-  display: grid;
-  gap: 4px;
-}
-.lyrics-range small {
+.lyrics-footnote {
+  margin: 10px 4px 16px;
+  font-size: 11px;
+  line-height: 1.65;
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
-.lyrics-range-disabled {
-  opacity: 0.5;
+.lyrics-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
 }
-.lyrics-reset {
-  margin-left: 20px;
+.lyrics-actions button {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 6px;
+  border-radius: 13px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--lyrics-tint);
 }
 .lyrics-reset-confirm {
-  padding: 16px;
-  border-radius: 12px;
+  padding: 14px;
+  margin-top: 12px;
   background: var(--surface);
+  border-radius: 18px;
+  font-size: 12px;
 }
-.lyrics-reset-confirm button {
-  margin-right: 12px;
+.lyrics-reset-confirm .confirm-reset {
+  color: #fff;
+  background: var(--lyrics-tint);
 }
 @media (max-width: 360px) {
+  .lyrics-group {
+    padding: 0 12px;
+  }
   .lyrics-colors {
     grid-template-columns: 1fr;
+  }
+  .lyrics-details summary > span {
+    display: none;
   }
 }
 </style>

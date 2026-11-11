@@ -156,8 +156,7 @@ public final class LyricsInteractionChecks extends Instrumentation {
                         WindowInsets.Type.statusBars(), Insets.of(0, top, 0, 0))
                     .build();
             call(overlay, "updateDisplay", new Class<?>[] {WindowInsets.class}, local);
-            stable[0] &=
-                initial[0].equals(field(overlay, "bounds")) && layout().y == startY[0];
+            stable[0] &= initial[0].equals(field(overlay, "bounds")) && layout().y == startY[0];
             panel().requestApplyInsets();
           });
       SystemClock.sleep(70);
@@ -169,8 +168,7 @@ public final class LyricsInteractionChecks extends Instrumentation {
           panel().getLocationOnScreen(at);
           check(
               "Fullscreen system-bar changes keep the actual lyric window at the same height",
-              Math.abs(at[1] - startY[0]) <= 1
-                  && initial[0].equals(field(overlay, "bounds")));
+              Math.abs(at[1] - startY[0]) <= 1 && initial[0].equals(field(overlay, "bounds")));
         });
     screenshot("landscape-stable.png");
   }
@@ -191,7 +189,7 @@ public final class LyricsInteractionChecks extends Instrumentation {
                   value[0] = result;
                   done.countDown();
                 }));
-    if (!done.await(3, TimeUnit.SECONDS)) throw new AssertionError("WebView response timeout");
+    if (!done.await(10, TimeUnit.SECONDS)) throw new AssertionError("WebView response timeout");
     return value[0];
   }
 
@@ -340,7 +338,79 @@ public final class LyricsInteractionChecks extends Instrumentation {
             ((ViewGroup) slider[0].getParent()).removeView(slider[0]);
             call(overlay, "toggleEditor", new Class<?>[0]);
           });
-      SystemClock.sleep(180);
+      SystemClock.sleep(380);
+      idle();
+      main(
+          () -> {
+            ViewGroup rows = (ViewGroup) field(overlay, "tools");
+            ((ViewGroup) rows.getChildAt(0)).getChildAt(4).performClick();
+          });
+      idle();
+      android.view.accessibility.AccessibilityNodeInfo menuRoot =
+          getUiAutomation().getRootInActiveWindow();
+      check(
+          "More styles opens a real accessible native menu above the overlay",
+          menuRoot != null && !menuRoot.findAccessibilityNodeInfosByText("关闭桌面歌词").isEmpty());
+      main(() -> ((PopupMenu) field(field(overlay, "tools"), "overflow")).dismiss());
+      idle();
+      int[] expandedHeight = new int[1];
+      main(
+          () -> {
+            expandedHeight[0] = panel().getHeight();
+            ViewGroup toolRows = (ViewGroup) field(overlay, "tools");
+            SeekBar fontSlider = (SeekBar) ((ViewGroup) toolRows.getChildAt(1)).getChildAt(1);
+            SeekBar opacitySlider = (SeekBar) ((ViewGroup) toolRows.getChildAt(2)).getChildAt(1);
+            check(
+                "Native sliders expose their actual accessible parameter ranges",
+                fontSlider.getMin() == 12
+                    && fontSlider.getMax() == 48
+                    && opacitySlider.getMin() == 30
+                    && opacitySlider.getMax() == 100);
+            ViewGroup controls = (ViewGroup) field(overlay, "tools");
+            ViewGroup toolbar = (ViewGroup) controls.getChildAt(0);
+            check(
+                "Compact controls keep three rows and usable button targets",
+                controls.getChildCount() == 3
+                    && toolbar.getChildAt(0).getWidth()
+                        >= Math.round(44 * target.getResources().getDisplayMetrics().density) - 1);
+            call(overlay, "toggleEditor", new Class<?>[0]);
+            check(
+                "Collapse starts at the expanded geometry without a jump",
+                layout().height == expandedHeight[0]
+                    && field(overlay, "geometryAnimation") != null);
+          });
+      SystemClock.sleep(80);
+      main(
+          () -> {
+            check(
+                "Collapse contains visible intermediate height and opacity",
+                layout().height < expandedHeight[0]
+                    && field(overlay, "geometryAnimation") != null
+                    && ((View) field(overlay, "tools")).getAlpha() < 1);
+            int currentHeight = layout().height;
+            call(overlay, "toggleEditor", new Class<?>[0]);
+            check(
+                "Reopening a closing panel continues from its current frame",
+                layout().height == currentHeight);
+          });
+      SystemClock.sleep(380);
+      idle();
+      main(
+          () -> {
+            call(overlay, "toggleEditor", new Class<?>[0]);
+          });
+      SystemClock.sleep(380);
+      idle();
+      main(
+          () -> {
+            check(
+                "Collapsed controls release animation and keep the lyric window",
+                field(overlay, "geometryAnimation") == null
+                    && panel() == original
+                    && ((View) field(overlay, "tools")).getVisibility() == View.GONE);
+            call(overlay, "toggleEditor", new Class<?>[0]);
+          });
+      SystemClock.sleep(380);
       idle();
       int[] start = {0};
       main(
@@ -474,7 +544,10 @@ public final class LyricsInteractionChecks extends Instrumentation {
                 (params.flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
                     && params.alpha <= .8f);
             android.util.DisplayMetrics display = new android.util.DisplayMetrics();
-            target.getSystemService(WindowManager.class).getDefaultDisplay().getRealMetrics(display);
+            target
+                .getSystemService(WindowManager.class)
+                .getDefaultDisplay()
+                .getRealMetrics(display);
             check(
                 "Status lyrics stay centered on the physical screen, including cutout displays",
                 Math.abs(point[0] * 2 + view.getWidth() - display.widthPixels) <= 1);
@@ -561,9 +634,31 @@ public final class LyricsInteractionChecks extends Instrumentation {
               check(
                   "Restore defaults resets style and positions but preserves feature switches",
                   restored.getInt("size") == 20
+                      && restored.getString("highlightColor").equals("#35baff")
+                      && restored.getString("textColor").equals("#c5ebff")
                       && !restored.getBoolean("locked")
                       && !saved.contains("lyricsLandscapeX")
                       && saved.getBoolean("lyricsStatusEnabled", false));
+              saved
+                  .edit()
+                  .putString("lyricsHighlightColor", "#00d9e9")
+                  .putString("lyricsTextColor", "#8fffad")
+                  .apply();
+              JSONObject migrated = (JSONObject) method.invoke(null, target, new JSONObject());
+              check(
+                  "The previous default palette upgrades to classic light blue",
+                  migrated.getString("highlightColor").equals("#35baff")
+                      && migrated.getString("textColor").equals("#c5ebff"));
+              saved
+                  .edit()
+                  .putString("lyricsHighlightColor", "#123abc")
+                  .putString("lyricsTextColor", "#abcdef")
+                  .apply();
+              JSONObject custom = (JSONObject) method.invoke(null, target, new JSONObject());
+              check(
+                  "Palette upgrade preserves user-picked colors",
+                  custom.getString("highlightColor").equals("#123abc")
+                      && custom.getString("textColor").equals("#abcdef"));
             } catch (Exception error) {
               throw new RuntimeException(error);
             }

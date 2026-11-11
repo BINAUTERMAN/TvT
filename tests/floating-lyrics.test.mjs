@@ -6,7 +6,7 @@ const browserPath =
   process.env.PLAYWRIGHT_EXECUTABLE_PATH ??
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 
-async function setup(page, permission = true) {
+async function setup(page, permission = true, expanded = true) {
   await page.addInitScript((permission) => {
     const saved = JSON.parse(localStorage.getItem('test-lyrics') || 'null') || {
       size: 20,
@@ -72,9 +72,9 @@ async function setup(page, permission = true) {
                 size: 20,
                 width: 88,
                 locked: false,
-                highlightColor: '#00d9e9',
-                textColor: '#8fffad',
-                secondaryColor: '#dedee5',
+                highlightColor: '#35baff',
+                textColor: '#c5ebff',
+                secondaryColor: '#b1d9f0',
                 backgroundColor: '#1c1c20',
                 opacity: 100,
                 backgroundOpacity: 0,
@@ -114,6 +114,13 @@ async function setup(page, permission = true) {
   }, permission);
   await page.goto('http://127.0.0.1:5173');
   await openSettings(page);
+  if (expanded) await expandDetails(page);
+}
+
+async function expandDetails(page) {
+  for (const details of await page.locator('.floating-settings details').all())
+    if (!(await details.evaluate((el) => el.open)))
+      await details.locator(':scope > summary').click();
 }
 
 async function openSettings(page) {
@@ -181,7 +188,9 @@ test('桌面歌词手机和平板布局、配色与参数保存（原生桥替�
       assert.equal(
         await page
           .locator('.floating-preview')
-          .evaluate((el) => getComputedStyle(el).fontSize),
+          .evaluate((el) =>
+            getComputedStyle(el).getPropertyValue('--preview-font'),
+          ),
         '32px',
       );
       assert.equal(
@@ -266,6 +275,7 @@ test('桌面歌词手机和平板布局、配色与参数保存（原生桥替�
       });
       await page.reload();
       await openSettings(page);
+      await expandDetails(page);
       assert.equal(
         await page.getByLabel('歌词字号', { exact: true }).inputValue(),
         '32',
@@ -289,6 +299,70 @@ test('桌面歌词手机和平板布局、配色与参数保存（原生桥替�
       assert.deepEqual(errors, []);
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('精简分组、滚动预览吸顶与返回展开（原生桥替身）', async () => {
+  const browser = await chromium.launch({
+    executablePath: browserPath,
+    headless: true,
+  });
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    await setup(page, true, false);
+    await page.getByRole('button', { name: '经典蓝', exact: true }).click();
+    await idle(page);
+    const custom = page.locator('.lyrics-details').first();
+    assert.equal(await custom.evaluate((el) => el.open), false);
+    const preview = page.locator('.lyrics-preview-dock');
+    const initial = await preview.boundingBox();
+    const sheet = page.locator('.sheet-panel');
+    await sheet.evaluate((el) => {
+      el.scrollTop = 420;
+    });
+    await page.waitForFunction(() =>
+      document
+        .querySelector('.lyrics-preview-dock')
+        ?.classList.contains('is-pinned'),
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.lyrics-preview-stage').getBoundingClientRect()
+          .height < 130,
+    );
+    const pinned = await preview.boundingBox();
+    const root = await sheet.boundingBox();
+    assert.ok(pinned.y >= root.y && pinned.y < root.y + 25);
+    assert.ok(pinned.height < initial.height);
+    await sheet.evaluate((el) => {
+      el.scrollTop = 650;
+    });
+    await page.waitForTimeout(100);
+    assert.ok(Math.abs((await preview.boundingBox()).y - pinned.y) < 2);
+    await page.screenshot({ path: 'artifacts/lyrics-preview-pinned.png' });
+    await sheet.evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await page.waitForFunction(
+      () =>
+        !document
+          .querySelector('.lyrics-preview-dock')
+          ?.classList.contains('is-pinned'),
+    );
+    await custom.locator('summary').click();
+    assert.equal(
+      await page.getByLabel('已唱颜色', { exact: true }).isVisible(),
+      true,
+    );
+    await sheet.evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await page.screenshot({ path: 'artifacts/lyrics-settings-compact.png' });
+    await browser.close();
   } finally {
     await browser.close();
   }
@@ -354,7 +428,7 @@ test('参数条防误触、拖动精调与恢复默认确认（原生桥替身�
     assert.equal(await slider.inputValue(), '20');
     assert.equal(
       await page.getByLabel('已唱颜色', { exact: true }).inputValue(),
-      '#00d9e9',
+      '#35baff',
     );
     assert.equal(
       await page.getByLabel('锁定位置，触摸穿透', { exact: true }).isChecked(),

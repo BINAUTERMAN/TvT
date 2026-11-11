@@ -26,7 +26,7 @@ final class LyricsSeekBar extends SeekBar {
     if (!isEnabled()) return false;
     int action = event.getActionMasked();
     if (action == MotionEvent.ACTION_DOWN) {
-      float ratio = (float) getProgress() / Math.max(1, getMax());
+      float ratio = (float) (getProgress() - getMin()) / Math.max(1, getMax() - getMin());
       if (getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) ratio = 1 - ratio;
       float center = getPaddingLeft() + (getWidth() - getPaddingLeft() - getPaddingRight()) * ratio;
       if (Math.abs(event.getX() - center) > 20 * getResources().getDisplayMetrics().density)
@@ -52,7 +52,7 @@ final class LyricsSeekBar extends SeekBar {
               + Math.round(
                   delta
                       / Math.max(1, getWidth() - getPaddingLeft() - getPaddingRight())
-                      * getMax()));
+                      * (getMax() - getMin())));
       return true;
     }
     if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_UP) {

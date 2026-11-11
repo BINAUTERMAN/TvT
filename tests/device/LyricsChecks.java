@@ -336,7 +336,7 @@ public final class LyricsChecks extends Instrumentation {
               throw new RuntimeException(error);
             }
           });
-      SystemClock.sleep(180);
+      SystemClock.sleep(380);
       waitForIdleSync();
       onMain(
           () -> {
@@ -356,7 +356,7 @@ public final class LyricsChecks extends Instrumentation {
                       && layout.y + panel.getHeight() <= bounds.bottom);
               check(
                   "Large fonts keep every desktop control row visible",
-                  ((ViewGroup) controls).getChildAt(3).getHeight()
+                  ((ViewGroup) controls).getChildAt(2).getHeight()
                       >= 40 * controls.getResources().getDisplayMetrics().density);
               Bitmap editor =
                   Bitmap.createBitmap(panel.getWidth(), panel.getHeight(), Bitmap.Config.ARGB_8888);
