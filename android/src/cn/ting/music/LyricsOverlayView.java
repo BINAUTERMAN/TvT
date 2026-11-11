@@ -32,26 +32,41 @@ final class LyricsOverlayView extends View {
       };
 
   LyricsOverlayView(Context context, SharedPreferences saved) {
+    this(context, saved, false);
+  }
+
+  LyricsOverlayView(Context context, SharedPreferences saved, boolean statusBar) {
     super(context);
     float density = getResources().getDisplayMetrics().density;
-    textSize = saved.getInt("lyricsSize", 20) * getResources().getDisplayMetrics().scaledDensity;
+    textSize =
+        saved.getInt(statusBar ? "lyricsStatusSize" : "lyricsSize", statusBar ? 12 : 20)
+            * getResources().getDisplayMetrics().scaledDensity;
     secondaryScale = saved.getInt("lyricsSecondarySize", 70) / 100f;
     spacing = saved.getInt("lyricsLineSpacing", 5) * density;
     shadow = saved.getInt("lyricsShadow", 1) * density;
-    mode = saved.getString("lyricsMode", "next");
-    align = saved.getString("lyricsAlign", "center");
-    sung = readColor(saved, "lyricsHighlightColor", FloatingLyrics.accentColor(saved));
-    unsung = readColor(saved, "lyricsTextColor", "#8fffad");
+    mode = statusBar ? "single" : saved.getString("lyricsMode", "next");
+    align = statusBar ? "center" : saved.getString("lyricsAlign", "center");
+    sung =
+        readColor(
+            saved,
+            statusBar ? "lyricsStatusSungColor" : "lyricsHighlightColor",
+            statusBar ? "#00d9e9" : FloatingLyrics.accentColor(saved));
+    unsung =
+        readColor(
+            saved,
+            statusBar ? "lyricsStatusColor" : "lyricsTextColor",
+            statusBar ? "#ffffff" : "#8fffad");
     secondary = readColor(saved, "lyricsSecondaryColor", "#dedee5");
-    outline = saved.getInt("lyricsOutline", 1);
-    gradient = saved.getBoolean("lyricsGradient", true);
+    outline = statusBar ? 0 : saved.getInt("lyricsOutline", 1);
+    gradient = !statusBar && saved.getBoolean("lyricsGradient", true);
     smooth = saved.getBoolean("lyricsSmooth", true) && ValueAnimator.areAnimatorsEnabled();
     translation = saved.getBoolean("lyricsTranslation", true);
     paint.setTypeface(
         Typeface.create(
             Typeface.DEFAULT,
-            saved.getBoolean("lyricsBold", true) ? Typeface.BOLD : Typeface.NORMAL));
-    setPadding(0, Math.round(5 * density), 0, Math.round(5 * density));
+            !statusBar && saved.getBoolean("lyricsBold", true) ? Typeface.BOLD : Typeface.NORMAL));
+    int padding = statusBar ? 0 : Math.round(5 * density);
+    setPadding(0, padding, 0, padding);
     setContentDescription("桌面歌词，轻点展开控制，拖动调整位置");
   }
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { native } from '../bridge';
+import LyricsRange from './LyricsRange.vue';
+import StatusBarLyricsPanel from './StatusBarLyricsPanel.vue';
 import { preferences, updatePreference, notify } from '../store';
 
 const settings = reactive({
@@ -31,6 +33,7 @@ type Settings = typeof settings;
 const ready = ref(false);
 const busy = ref(false);
 const failed = ref(false);
+const resetConfirm = ref(false);
 let disposed = false;
 const ranges = [
   { key: 'size', label: '字号', min: 12, max: 48, unit: 'sp' },
@@ -136,7 +139,12 @@ async function load() {
     busy.value = false;
   }
 }
-async function update(data: Partial<Settings> & { resetPosition?: boolean }) {
+async function update(
+  data: Partial<Settings> & {
+    resetPosition?: boolean;
+    resetDefaults?: boolean;
+  },
+) {
   if (busy.value || !ready.value || document.hidden) return;
   busy.value = true;
   let reload = false;
@@ -152,6 +160,10 @@ async function update(data: Partial<Settings> & { resetPosition?: boolean }) {
     if (reload && !disposed) await load();
   }
 }
+async function resetDefaults() {
+  resetConfirm.value = false;
+  await update({ resetDefaults: true });
+}
 async function enable(event: Event) {
   const input = event.target as HTMLInputElement;
   const value = input.checked;
@@ -160,9 +172,6 @@ async function enable(event: Event) {
   await updatePreference('floatingLyrics', value);
   busy.value = false;
   await load();
-}
-function changeRange(event: Event, key: (typeof ranges)[number]['key']) {
-  settings[key] = Number((event.target as HTMLInputElement).value);
 }
 function changeColor(event: Event, key: (typeof colors)[number]['key']) {
   settings[key] = (event.target as HTMLInputElement).value;
@@ -317,7 +326,7 @@ onUnmounted(() => {
       <p class="muted">
         有真实逐字时间时连续扫色，长句随演唱进度横移；双行上下交替接唱。无逐字时间时整句高亮。暂停和灭屏时停止动画。
       </p>
-      <label
+      <div
         v-for="range in ranges"
         :key="range.key"
         class="setting-row lyrics-range"
@@ -331,21 +340,21 @@ onUnmounted(() => {
           {{ range.label }}
           <small>{{ settings[range.key] }}{{ range.unit }}</small>
         </span>
-        <input
-          class="lyrics-size"
-          type="range"
-          :aria-label="`歌词${range.label}`"
+        <LyricsRange
+          v-model="settings[range.key]"
+          :label="`歌词${range.label}`"
           :min="range.min"
           :max="range.max"
-          :value="settings[range.key]"
           :disabled="
             (range.key === 'snapDistance' && !settings.snap) ||
             (range.key === 'secondarySize' && settings.mode !== 'translation')
           "
-          @input="changeRange($event, range.key)"
-          @change="update({ [range.key]: settings[range.key] })"
+          @change="update({ [range.key]: $event })"
         />
-      </label>
+      </div>
+      <p class="muted">
+        拖动滑块调节，或使用两侧 − / + 精调；点按轨道不会改变数值。
+      </p>
       <h3>位置与操作</h3>
       <label class="setting-row">
         <span>靠近屏幕边缘自动吸附</span>
@@ -364,7 +373,7 @@ onUnmounted(() => {
         />
       </label>
       <p class="muted">
-        拖动歌词调整位置，松手靠近四边时自动吸附。横竖屏分别记忆位置，避让系统栏与刘海；宽度按可用屏幕比例适配手机和平板。
+        拖动歌词调整位置，松手或锁定时靠近四边会平滑吸附。横竖屏分别记忆位置，避让系统栏与刘海；宽度按可用屏幕比例适配手机和平板。
       </p>
       <p class="muted">
         轻点歌词展开控制面板，再点收起；背景设为 0%
@@ -373,7 +382,23 @@ onUnmounted(() => {
       <button class="text-button" @click="update({ resetPosition: true })">
         重置横竖屏位置
       </button>
+      <button class="text-button lyrics-reset" @click="resetConfirm = true">
+        恢复默认参数
+      </button>
+      <div
+        v-if="resetConfirm"
+        class="lyrics-reset-confirm"
+        role="group"
+        aria-label="恢复默认参数确认"
+      >
+        <p>恢复默认外观和横竖屏位置，并解除锁定。桌面歌词开关保持当前状态。</p>
+        <button class="secondary-button" @click="resetConfirm = false">
+          取消恢复
+        </button>
+        <button class="primary" @click="resetDefaults">确认恢复默认</button>
+      </div>
     </fieldset>
+    <StatusBarLyricsPanel />
   </section>
 </template>
 
@@ -473,6 +498,17 @@ onUnmounted(() => {
 }
 .lyrics-range-disabled {
   opacity: 0.5;
+}
+.lyrics-reset {
+  margin-left: 20px;
+}
+.lyrics-reset-confirm {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.lyrics-reset-confirm button {
+  margin-right: 12px;
 }
 @media (max-width: 360px) {
   .lyrics-colors {

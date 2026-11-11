@@ -68,6 +68,7 @@ public final class PlaybackService extends Service {
   private String quality = "128";
   private String resolvedQuality = "128";
   private FloatingLyrics floatingLyrics;
+  private StatusBarLyrics statusBarLyrics;
   private boolean lyricBuffering;
   private final java.util.List<Long> lyricTimes = new java.util.ArrayList<>();
   private final java.util.List<JSONObject> lyricLines = new java.util.ArrayList<>();
@@ -120,6 +121,7 @@ public final class PlaybackService extends Service {
       registerReceiver(bufferPolicyChanged, bufferPolicy, Context.RECEIVER_NOT_EXPORTED);
     else registerReceiver(bufferPolicyChanged, bufferPolicy);
     floatingLyrics = new FloatingLyrics(this);
+    statusBarLyrics = new StatusBarLyrics(this);
     audio = (AudioManager) getSystemService(AUDIO_SERVICE);
     AudioAttributes attributes =
         new AudioAttributes.Builder()
@@ -933,10 +935,12 @@ public final class PlaybackService extends Service {
     if (!((PowerManager) getSystemService(POWER_SERVICE)).isInteractive()) {
       handler.removeCallbacks(lyricTick);
       if (floatingLyrics != null) floatingLyrics.hide();
+      if (statusBarLyrics != null) statusBarLyrics.hide();
       return;
     }
-    if (floatingLyrics == null || !floatingLyrics.enabled()) {
+    if (floatingLyrics == null || (!floatingLyrics.enabled() && !statusBarLyrics.enabled())) {
       if (floatingLyrics != null) floatingLyrics.hide();
+      if (statusBarLyrics != null) statusBarLyrics.hide();
       handler.removeCallbacks(lyricTick);
       return;
     }
@@ -980,24 +984,58 @@ public final class PlaybackService extends Service {
   }
 
   public void refreshFloatingLyrics() {
-    floatingLyrics.hide();
+    if (!floatingLyrics.applyLockChange()) floatingLyrics.hide();
     updateFloatingLyrics();
     showNotification();
+  }
+
+  public void configureFloatingLyrics(JSONObject updates) {
+    if (!(updates.length() == 1 && updates.has("locked"))) floatingLyrics.hide();
+    refreshFloatingLyrics();
+  }
+
+  public void configureStatusBarLyrics() {
+    configureStatusBarLyrics(true);
+  }
+
+  public void configureStatusBarLyrics(boolean requestLyrics) {
+    if (!statusBarLyrics.enabled()) {
+      statusBarLyrics.hide();
+      updateFloatingLyrics();
+      return;
+    }
+    boolean preview = statusBarLyrics.isPreviewing();
+    statusBarLyrics.refresh();
+    if (preview && statusBarLyrics.enabled()) return;
+    if (requestLyrics
+        && (floatingLyrics.enabled() || statusBarLyrics.enabled())
+        && lyricLines.isEmpty()) loadFloatingLyrics();
+    else updateFloatingLyrics();
+  }
+
+  public void previewStatusBarLyrics() {
+    statusBarLyrics.preview();
   }
 
   private void updateFloatingLyrics() {
     handler.removeCallbacks(lyricTick);
     if (destroyed) return;
-    if (floatingLyrics == null || !floatingLyrics.enabled()) {
+    if (floatingLyrics == null || (!floatingLyrics.enabled() && !statusBarLyrics.enabled())) {
       if (floatingLyrics != null) floatingLyrics.hide();
+      if (statusBarLyrics != null) statusBarLyrics.hide();
       return;
     }
     if (!((PowerManager) getSystemService(POWER_SERVICE)).isInteractive()) {
       floatingLyrics.hide();
+      statusBarLyrics.hide();
       return;
     }
     JSONObject item = track();
-    if (item == null) return;
+    if (item == null) {
+      floatingLyrics.hide();
+      if (!statusBarLyrics.isPreviewing()) statusBarLyrics.hide();
+      return;
+    }
     long position = prepared && media != null ? media.getCurrentPosition() : resumePosition;
     int active = -1;
     for (int index = 0; index < lyricTimes.size(); index++) {
@@ -1008,14 +1046,22 @@ public final class PlaybackService extends Service {
     if (active >= 0 && active < lyricLines.size()) {
       JSONObject line = lyricLines.get(active);
       JSONObject upcoming = active + 1 < lyricLines.size() ? lyricLines.get(active + 1) : null;
-      floatingLyrics.showLine(line, upcoming, active, position, isPlaying() && !lyricBuffering, speed);
+      floatingLyrics.showLine(
+          line, upcoming, active, position, isPlaying() && !lyricBuffering, speed);
+      statusBarLyrics.show(
+          line, upcoming, position, isPlaying() && !lyricBuffering, speed, item.optString("title"));
       next = Math.min(next, AirLyricsProgress.nextBoundary(line, position));
-    } else floatingLyrics.show(item.optString("title"));
+    } else {
+      floatingLyrics.show(item.optString("title"));
+      statusBarLyrics.show(
+          null, null, position, isPlaying() && !lyricBuffering, speed, item.optString("title"));
+    }
     if (isPlaying() && next < Long.MAX_VALUE)
       handler.postDelayed(lyricTick, Math.max(80, (long) ((next - position) / speed)));
   }
 
   private void releaseMedia() {
+    if (statusBarLyrics != null) statusBarLyrics.hide();
     lyricBuffering = false;
     if (floatingLyrics != null) floatingLyrics.stopAnimation();
     handler.removeCallbacks(finishFade);
@@ -1063,6 +1109,7 @@ public final class PlaybackService extends Service {
     playbackBuffer.close();
     artworkLoader.close();
     floatingLyrics.hide();
+    statusBarLyrics.hide();
     releaseMedia();
     audio.abandonAudioFocusRequest(focus);
     cancelInterruption();
@@ -1083,7 +1130,8 @@ public final class PlaybackService extends Service {
   public void onConfigurationChanged(android.content.res.Configuration configuration) {
     super.onConfigurationChanged(configuration);
     if (floatingLyrics != null) {
-      floatingLyrics.hide();
+      floatingLyrics.onDisplayChanged();
+      statusBarLyrics.onDisplayChanged();
       updateFloatingLyrics();
     }
   }

@@ -31,6 +31,18 @@ async function setup(page, permission = true) {
     };
     window.lyricsCalls = [];
     window.lyricsSaved = saved;
+    const statusDefaults = {
+      size: 12,
+      width: 38,
+      horizontal: 50,
+      vertical: 0,
+      side: 'auto',
+      hideLandscape: true,
+      color: '#ffffff',
+      sungColor: '#00d9e9',
+      error: '',
+    };
+    const statusSaved = { ...statusDefaults, enabled: false, permission };
     window.Native = {
       request(id, action, source) {
         const payload = JSON.parse(source);
@@ -54,8 +66,46 @@ async function setup(page, permission = true) {
           if (window.rejectLyricsWrite && Object.keys(payload).length) {
             window.rejectLyricsWrite = false;
             error = '测试：保存失败';
-          } else Object.assign(saved, payload);
+          } else {
+            if (payload.resetDefaults)
+              Object.assign(saved, {
+                size: 20,
+                width: 88,
+                locked: false,
+                highlightColor: '#00d9e9',
+                textColor: '#8fffad',
+                secondaryColor: '#dedee5',
+                backgroundColor: '#1c1c20',
+                opacity: 100,
+                backgroundOpacity: 0,
+                bold: true,
+                lineSpacing: 5,
+                secondarySize: 70,
+                shadow: 1,
+                outline: 1,
+                gradient: true,
+                smooth: true,
+                align: 'center',
+                mode: 'next',
+                snap: true,
+                snapDistance: 24,
+              });
+            Object.assign(saved, payload);
+          }
           result = { ...saved };
+        }
+        if (
+          action === 'statusLyricsSettings' ||
+          action === 'statusLyricsPreview'
+        ) {
+          if (payload.enabled && !permission)
+            error = '请允许悬浮窗权限，返回后可预览状态栏歌词';
+          else {
+            if (payload.resetDefaults)
+              Object.assign(statusSaved, statusDefaults);
+            Object.assign(statusSaved, payload);
+          }
+          result = { ...statusSaved };
         }
         localStorage.setItem('test-lyrics', JSON.stringify(saved));
         setTimeout(() => window.nativeResolve(id, result, error), 15);
@@ -80,7 +130,7 @@ async function openSettings(page) {
 }
 
 async function idle(page) {
-  await page.locator('.floating-settings fieldset:not([disabled])').waitFor();
+  await page.locator('.floating-settings > fieldset:not([disabled])').waitFor();
 }
 
 async function change(page, label, value, commit = true) {
@@ -239,6 +289,143 @@ test('桌面歌词手机和平板布局、配色与参数保存（原生桥替�
       assert.deepEqual(errors, []);
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('参数条防误触、拖动精调与恢复默认确认（原生桥替身）', async () => {
+  const browser = await chromium.launch({
+    executablePath: browserPath,
+    headless: true,
+  });
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    await setup(page);
+    const slider = page.getByLabel('歌词字号', { exact: true });
+    await slider.scrollIntoViewIfNeeded();
+    const box = await slider.boundingBox();
+    await slider.click({ position: { x: box.width - 3, y: box.height / 2 } });
+    assert.equal(await slider.inputValue(), '20');
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.lyricsCalls.filter(
+            (c) => c.action === 'floatingSettings' && 'size' in c.payload,
+          ).length,
+      ),
+      0,
+    );
+    const center = box.x + 10 + ((box.width - 20) * (20 - 12)) / (48 - 12);
+    await page.mouse.move(center, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      center + (box.width - 20) * 0.3,
+      box.y + box.height / 2,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+    await idle(page);
+    assert.ok(Number(await slider.inputValue()) > 20);
+    const previous = Number(await slider.inputValue());
+    await page
+      .getByRole('button', { name: '增大歌词字号', exact: true })
+      .click();
+    await idle(page);
+    assert.equal(Number(await slider.inputValue()), previous + 1);
+    await page
+      .getByRole('button', { name: '恢复默认参数', exact: true })
+      .click();
+    assert.equal(await slider.inputValue(), String(previous + 1));
+    await page.getByRole('button', { name: '取消恢复', exact: true }).click();
+    assert.equal(
+      await page.getByRole('group', { name: '恢复默认参数确认' }).count(),
+      0,
+    );
+    await page
+      .getByRole('button', { name: '恢复默认参数', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: '确认恢复默认', exact: true })
+      .click();
+    await idle(page);
+    assert.equal(await slider.inputValue(), '20');
+    assert.equal(
+      await page.getByLabel('已唱颜色', { exact: true }).inputValue(),
+      '#00d9e9',
+    );
+    assert.equal(
+      await page.getByLabel('锁定位置，触摸穿透', { exact: true }).isChecked(),
+      false,
+    );
+    assert.ok(
+      await page.evaluate(() =>
+        window.lyricsCalls.some(
+          (c) => c.action === 'floatingSettings' && c.payload.resetDefaults,
+        ),
+      ),
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('状态栏歌词独立开关、预览、位置和恢复默认（原生桥替身）', async () => {
+  const browser = await chromium.launch({
+    executablePath: browserPath,
+    headless: true,
+  });
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    await setup(page);
+    const panel = page.locator('.status-lyrics-settings');
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    await panel.getByLabel('开启状态栏歌词', { exact: true }).click();
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    assert.equal(
+      await panel.getByLabel('开启状态栏歌词', { exact: true }).isChecked(),
+      true,
+    );
+    assert.equal(
+      await page.getByLabel('显示桌面歌词', { exact: true }).isChecked(),
+      false,
+    );
+    await panel.getByRole('button', { name: '预览状态栏位置（5秒）' }).click();
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    assert.ok(
+      await page.evaluate(() =>
+        window.lyricsCalls.some((c) => c.action === 'statusLyricsPreview'),
+      ),
+    );
+    await panel.getByRole('button', { name: '增大状态栏歌词垂直偏移' }).click();
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    assert.equal(
+      await panel
+        .getByLabel('状态栏歌词垂直偏移', { exact: true })
+        .inputValue(),
+      '1',
+    );
+    await panel
+      .getByRole('button', { name: '恢复状态栏默认参数', exact: true })
+      .click();
+    await panel
+      .getByRole('button', { name: '确认恢复状态栏默认', exact: true })
+      .click();
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    assert.equal(
+      await panel
+        .getByLabel('状态栏歌词垂直偏移', { exact: true })
+        .inputValue(),
+      '0',
+    );
+    assert.equal(
+      await panel.getByLabel('开启状态栏歌词', { exact: true }).isChecked(),
+      true,
+    );
   } finally {
     await browser.close();
   }

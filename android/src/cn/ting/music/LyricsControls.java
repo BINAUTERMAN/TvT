@@ -52,7 +52,7 @@ final class LyricsControls extends LinearLayout {
     label.setTextColor(Color.WHITE);
     label.setTextSize(12);
     opacity.addView(label);
-    SeekBar slider = new SeekBar(context);
+    SeekBar slider = new LyricsSeekBar(context);
     slider.setContentDescription("桌面歌词不透明度");
     slider.setMax(70);
     slider.setProgress(saved.getInt("lyricsOpacity", 100) - 30);

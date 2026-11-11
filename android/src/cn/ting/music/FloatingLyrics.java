@@ -36,17 +36,15 @@ final class FloatingLyrics {
   private String positionKey;
   private boolean dragging;
   private ValueAnimator snapAnimation;
+  private ValueAnimator geometryAnimation;
+  private boolean appliedLocked;
+  private final Runnable displayRefresh =
+      () -> {
+        if (panel != null) updateDisplay(panel.getRootWindowInsets());
+      };
 
   FloatingLyrics(Context context) {
-    this.context =
-        Build.VERSION.SDK_INT >= 30
-            ? context
-                .createDisplayContext(
-                    context
-                        .getSystemService(android.hardware.display.DisplayManager.class)
-                        .getDisplay(Display.DEFAULT_DISPLAY))
-                .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
-            : context;
+    this.context = LyricsScreen.windowContext(context);
     windows = (WindowManager) this.context.getSystemService(Context.WINDOW_SERVICE);
   }
 
@@ -65,6 +63,32 @@ final class FloatingLyrics {
   static JSONObject settings(Context context, JSONObject updates) throws Exception {
     SharedPreferences saved = context.getSharedPreferences("preferences", Context.MODE_PRIVATE);
     SharedPreferences.Editor editor = saved.edit();
+    if (updates.optBoolean("resetDefaults")) {
+      for (String key :
+          new String[] {
+            "Size",
+            "Width",
+            "Accent",
+            "HighlightColor",
+            "TextColor",
+            "SecondaryColor",
+            "BackgroundColor",
+            "Opacity",
+            "BackgroundOpacity",
+            "LineSpacing",
+            "SecondarySize",
+            "Shadow",
+            "Outline",
+            "Gradient",
+            "Smooth",
+            "SnapDistance",
+            "Snap",
+            "Bold",
+            "Align",
+            "Mode",
+            "Locked"
+          }) editor.remove("lyrics" + key);
+    }
     if (updates.has("size"))
       editor.putInt("lyricsSize", Math.max(12, Math.min(48, updates.optInt("size", 20))));
     if (updates.has("locked")) editor.putBoolean("lyricsLocked", updates.optBoolean("locked"));
@@ -116,7 +140,7 @@ final class FloatingLyrics {
         throw new IllegalArgumentException("不支持的歌词显示模式");
       editor.putString("lyricsMode", value);
     }
-    if (updates.optBoolean("resetPosition"))
+    if (updates.optBoolean("resetPosition") || updates.optBoolean("resetDefaults"))
       editor
           .remove("lyricsPortraitX")
           .remove("lyricsPortraitY")
@@ -227,6 +251,12 @@ final class FloatingLyrics {
     panel =
         new LinearLayout(context) {
           @Override
+          protected void onConfigurationChanged(android.content.res.Configuration configuration) {
+            super.onConfigurationChanged(configuration);
+            onDisplayChanged();
+          }
+
+          @Override
           protected void onMeasure(int widthSpec, int heightSpec) {
             int limit = bounds == null ? MeasureSpec.getSize(heightSpec) : bounds.height();
             if (MeasureSpec.getMode(heightSpec) != MeasureSpec.UNSPECIFIED)
@@ -238,6 +268,7 @@ final class FloatingLyrics {
     panel.setOrientation(LinearLayout.VERTICAL);
     panel.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
     boolean locked = locked();
+    appliedLocked = locked;
     {
       GradientDrawable background = new GradientDrawable();
       int alpha =
@@ -250,7 +281,7 @@ final class FloatingLyrics {
       panel.setBackground(background);
       panel.setPadding(dp(12), dp(8), dp(12), dp(8));
     }
-    if (!locked) {
+    {
       tools =
           new LyricsControls(
               context,
@@ -259,7 +290,8 @@ final class FloatingLyrics {
                 public void update(JSONObject changes) {
                   try {
                     settings(context, changes);
-                    refresh();
+                    if (changes.length() == 1 && changes.has("locked")) transitionLock(locked());
+                    else refresh();
                   } catch (Exception error) {
                     Toast.makeText(context, error.getMessage(), Toast.LENGTH_SHORT).show();
                   }
@@ -295,27 +327,11 @@ final class FloatingLyrics {
             | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
     if (locked) flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
     bounds = screenBounds();
-    if (Build.VERSION.SDK_INT < 30) {
-      panel.setOnApplyWindowInsetsListener(
-          (view, insets) -> {
-            android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
-            windows.getDefaultDisplay().getRealMetrics(metrics);
-            int left = insets.getStableInsetLeft(), top = insets.getStableInsetTop();
-            int right = insets.getStableInsetRight(), bottom = insets.getStableInsetBottom();
-            if (Build.VERSION.SDK_INT >= 28 && insets.getDisplayCutout() != null) {
-              DisplayCutout cutout = insets.getDisplayCutout();
-              left = Math.max(left, cutout.getSafeInsetLeft());
-              top = Math.max(top, cutout.getSafeInsetTop());
-              right = Math.max(right, cutout.getSafeInsetRight());
-              bottom = Math.max(bottom, cutout.getSafeInsetBottom());
-            }
-            bounds.set(left, top, metrics.widthPixels - right, metrics.heightPixels - bottom);
-            layout.width =
-                Math.round(bounds.width() * preferences().getInt("lyricsWidth", 88) / 100f);
-            restorePosition();
-            return insets;
-          });
-    }
+    panel.setOnApplyWindowInsetsListener(
+        (view, insets) -> {
+          updateDisplay(insets);
+          return insets;
+        });
     positionKey = bounds.width() > bounds.height() ? "lyricsLandscape" : "lyricsPortrait";
     relativeX =
         preferences().getFloat(positionKey + "X", preferences().getFloat("lyricsRelativeX", .5f));
@@ -333,6 +349,9 @@ final class FloatingLyrics {
     if (Build.VERSION.SDK_INT >= 28)
       layout.layoutInDisplayCutoutMode =
           WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+    if (Build.VERSION.SDK_INT >= 30)
+      layout.layoutInDisplayCutoutMode =
+          WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
     layout.alpha = preferences().getInt("lyricsOpacity", 100) / 100f;
     if (locked && android.os.Build.VERSION.SDK_INT >= 31) {
       float maximum =
@@ -346,10 +365,12 @@ final class FloatingLyrics {
     panel.addOnLayoutChangeListener(
         (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
           if (!dragging
+              && snapAnimation == null
+              && geometryAnimation == null
               && (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop))
             restorePosition();
         });
-    if (!locked)
+    {
       text.setOnTouchListener(
           new View.OnTouchListener() {
             float startX, startY;
@@ -357,6 +378,7 @@ final class FloatingLyrics {
             boolean moved;
 
             public boolean onTouch(View view, MotionEvent event) {
+              if (locked() || geometryAnimation != null) return false;
               if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 cancelSnap();
                 startX = event.getRawX();
@@ -367,7 +389,7 @@ final class FloatingLyrics {
                 dragging = true;
                 return true;
               }
-              if (event.getAction() == MotionEvent.ACTION_MOVE) {
+              if (event.getAction() == MotionEvent.ACTION_MOVE && dragging) {
                 if (Math.abs(event.getRawX() - startX) + Math.abs(event.getRawY() - startY) > dp(6))
                   moved = true;
                 if (!moved) return true;
@@ -398,6 +420,7 @@ final class FloatingLyrics {
               return false;
             }
           });
+    }
     try {
       windows.addView(panel, layout);
     } catch (RuntimeException unavailable) {
@@ -435,6 +458,144 @@ final class FloatingLyrics {
     updateLayout();
   }
 
+  boolean applyLockChange() {
+    if (panel == null || appliedLocked == locked()) return false;
+    transitionLock(locked());
+    return true;
+  }
+
+  private void transitionLock(boolean lock) {
+    if (panel == null || tools == null) return;
+    if (geometryAnimation != null && appliedLocked == lock) return;
+    cancelSnap();
+    if (geometryAnimation != null) {
+      ValueAnimator previous = geometryAnimation;
+      geometryAnimation = null;
+      previous.cancel();
+    }
+    tools.animate().cancel();
+    appliedLocked = lock;
+    boolean expand = !lock;
+    editing = expand;
+    int fromX = layout.x, fromY = layout.y;
+    int fromWidth = panel.getWidth(), fromHeight = panel.getHeight();
+    int fromTools = tools.getVisibility() == View.VISIBLE ? tools.getHeight() : 0;
+    float fromToolsAlpha = tools.getVisibility() == View.VISIBLE ? tools.getAlpha() : 0;
+    int targetWidth = windowWidth();
+    int contentWidth = Math.max(1, targetWidth - panel.getPaddingLeft() - panel.getPaddingRight());
+    tools.measure(
+        View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(bounds.height(), View.MeasureSpec.AT_MOST));
+    int targetTools = expand ? tools.getMeasuredHeight() : 0;
+    text.measure(
+        View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(
+            Math.max(
+                1,
+                bounds.height() - targetTools - panel.getPaddingTop() - panel.getPaddingBottom()),
+            View.MeasureSpec.AT_MOST));
+    int targetHeight =
+        Math.min(
+            bounds.height(),
+            text.getMeasuredHeight()
+                + targetTools
+                + panel.getPaddingTop()
+                + panel.getPaddingBottom());
+    int targetX = bounds.left + LyricsGeometry.restore(relativeX, bounds.width() - targetWidth);
+    int targetY = bounds.top + LyricsGeometry.restore(relativeY, bounds.height() - targetHeight);
+    if (lock && preferences().getBoolean("lyricsSnap", true)) {
+      int distance = dp(preferences().getInt("lyricsSnapDistance", 24));
+      targetX =
+          bounds.left
+              + LyricsGeometry.snap(targetX - bounds.left, bounds.width() - targetWidth, distance);
+      targetY =
+          bounds.top
+              + LyricsGeometry.snap(targetY - bounds.top, bounds.height() - targetHeight, distance);
+      relativeX = LyricsGeometry.relative(targetX - bounds.left, bounds.width() - targetWidth);
+      relativeY = LyricsGeometry.relative(targetY - bounds.top, bounds.height() - targetHeight);
+      preferences()
+          .edit()
+          .putFloat(positionKey + "X", relativeX)
+          .putFloat(positionKey + "Y", relativeY)
+          .apply();
+    }
+    final int endX = targetX, endY = targetY;
+    tools.setVisibility(View.VISIBLE);
+    int fromBackground =
+        Color.alpha(((GradientDrawable) panel.getBackground()).getColor().getDefaultColor());
+    int targetBackground =
+        Math.round((expand ? 75 : preferences().getInt("lyricsBackgroundOpacity", 0)) * 255 / 100f);
+    float fromAlpha = layout.alpha;
+    float targetAlpha = windowAlpha(lock);
+    ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
+    geometryAnimation = animator;
+    animator.setDuration(motionEnabled() ? 320 : 0);
+    animator.setInterpolator(new android.view.animation.PathInterpolator(.22f, 1, .36f, 1));
+    animator.addUpdateListener(
+        value -> {
+          if (panel == null) return;
+          float progress = (Float) value.getAnimatedValue();
+          layout.width = Math.round(fromWidth + (targetWidth - fromWidth) * progress);
+          layout.height = Math.round(fromHeight + (targetHeight - fromHeight) * progress);
+          layout.x = Math.round(fromX + (endX - fromX) * progress);
+          layout.y = Math.round(fromY + (endY - fromY) * progress);
+          layout.alpha = fromAlpha + (targetAlpha - fromAlpha) * progress;
+          android.view.ViewGroup.LayoutParams params = tools.getLayoutParams();
+          params.height = Math.round(fromTools + (targetTools - fromTools) * progress);
+          tools.setLayoutParams(params);
+          tools.setAlpha(fromToolsAlpha + ((expand ? 1 : 0) - fromToolsAlpha) * progress);
+          int alpha = Math.round(fromBackground + (targetBackground - fromBackground) * progress);
+          ((GradientDrawable) panel.getBackground())
+              .setColor((color("backgroundColor", "#1c1c20") & 0xffffff) | (alpha << 24));
+          updateLayout();
+        });
+    animator.addListener(
+        new AnimatorListenerAdapter() {
+          @Override
+          public void onAnimationEnd(Animator ended) {
+            if (geometryAnimation != ended || panel == null) return;
+            geometryAnimation = null;
+            finishLock(lock);
+          }
+        });
+    animator.start();
+  }
+
+  private float windowAlpha(boolean lock) {
+    float alpha = preferences().getInt("lyricsOpacity", 100) / 100f;
+    if (lock && Build.VERSION.SDK_INT >= 31)
+      alpha =
+          Math.min(
+              alpha,
+              Math.min(
+                  .78f,
+                  context
+                      .getSystemService(android.hardware.input.InputManager.class)
+                      .getMaximumObscuringOpacityForTouch()));
+    return alpha;
+  }
+
+  private void finishLock(boolean lock) {
+    android.view.ViewGroup.LayoutParams params = tools.getLayoutParams();
+    params.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+    tools.setLayoutParams(params);
+    tools.setVisibility(editing && !lock ? View.VISIBLE : View.GONE);
+    tools.setAlpha(1);
+    layout.height = WindowManager.LayoutParams.WRAP_CONTENT;
+    if (lock) layout.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+    else layout.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+    layout.alpha = windowAlpha(lock);
+    updateLayout();
+  }
+
+  private void cancelTransition() {
+    if (geometryAnimation == null) return;
+    ValueAnimator previous = geometryAnimation;
+    geometryAnimation = null;
+    previous.cancel();
+    if (panel != null && tools != null) finishLock(appliedLocked);
+  }
+
   private int windowWidth() {
     int preferred = Math.round(bounds.width() * preferences().getInt("lyricsWidth", 88) / 100f);
     return Math.min(
@@ -442,23 +603,32 @@ final class FloatingLyrics {
   }
 
   private Rect screenBounds() {
-    if (Build.VERSION.SDK_INT >= 30) {
-      WindowMetrics metrics = windows.getCurrentWindowMetrics();
-      Rect area = new Rect(metrics.getBounds());
-      android.graphics.Insets insets =
-          metrics
-              .getWindowInsets()
-              .getInsetsIgnoringVisibility(
-                  WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-      area.inset(insets.left, insets.top, insets.right, insets.bottom);
-      return area;
+    return LyricsScreen.safe(context, windows, panel == null ? null : panel.getRootWindowInsets());
+  }
+
+  void onDisplayChanged() {
+    if (panel == null) return;
+    panel.removeCallbacks(displayRefresh);
+    panel.postOnAnimation(displayRefresh);
+  }
+
+  private void updateDisplay(WindowInsets insets) {
+    if (panel == null || layout == null) return;
+    Rect next = LyricsScreen.safe(context, windows, insets);
+    String nextKey = next.width() > next.height() ? "lyricsLandscape" : "lyricsPortrait";
+    if (next.equals(bounds) && nextKey.equals(positionKey)) return;
+    cancelSnap();
+    cancelTransition();
+    dragging = false;
+    bounds = next;
+    if (!nextKey.equals(positionKey)) {
+      positionKey = nextKey;
+      relativeX = preferences().getFloat(positionKey + "X", .5f);
+      relativeY = preferences().getFloat(positionKey + "Y", .3f);
     }
-    android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
-    windows.getDefaultDisplay().getMetrics(metrics);
-    int top = 0;
-    int resource = context.getResources().getIdentifier("status_bar_height", "dimen", "android");
-    if (resource != 0) top = context.getResources().getDimensionPixelSize(resource);
-    return new Rect(0, top, metrics.widthPixels, metrics.heightPixels);
+    layout.width = windowWidth();
+    layout.height = WindowManager.LayoutParams.WRAP_CONTENT;
+    restorePosition();
   }
 
   private void restorePosition() {
@@ -491,8 +661,8 @@ final class FloatingLyrics {
       layout.y = startY;
       ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
       snapAnimation = animator;
-      animator.setDuration(180);
-      animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+      animator.setDuration(320);
+      animator.setInterpolator(new android.view.animation.PathInterpolator(.22f, 1, .36f, 1));
       animator.addUpdateListener(
           value -> {
             float fraction = (Float) value.getAnimatedValue();
@@ -531,6 +701,8 @@ final class FloatingLyrics {
   }
 
   void hide() {
+    if (panel != null) panel.removeCallbacks(displayRefresh);
+    cancelTransition();
     cancelSnap();
     dragging = false;
     if (text != null) text.stop();

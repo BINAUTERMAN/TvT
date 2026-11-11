@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Serial)
+param([Parameter(Mandatory=$true)][string]$Serial, [switch]$Interaction)
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 & "$PSScriptRoot/test-device.ps1" -BuildOnly
@@ -10,7 +10,11 @@ if ($LASTEXITCODE -ne 0) { throw 'App install failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Test install failed' }
 & $adb -s $Serial shell appops set cn.ting.music SYSTEM_ALERT_WINDOW allow
 if ($LASTEXITCODE -ne 0) { throw 'Overlay permission setup failed' }
-$result = & $adb -s $Serial shell am instrument -w cn.ting.music.tests/cn.ting.music.tests.LyricsChecks
-$result | Tee-Object artifacts/device-lyrics.txt
-& $adb -s $Serial pull /sdcard/Android/data/cn.ting.music/files/lyrics-verification artifacts
-if (($result -join "`n") -notmatch 'LYRICS_NATIVE_PASS') { throw 'Native lyrics integration failed' }
+$suite = if ($Interaction) { 'LyricsInteractionChecks' } else { 'LyricsChecks' }
+$result = & $adb -s $Serial shell am instrument -w "cn.ting.music.tests/cn.ting.music.tests.$suite"
+$log = if ($Interaction) { 'artifacts/device-lyrics-interaction.txt' } else { 'artifacts/device-lyrics.txt' }
+$result | Tee-Object $log
+$folder = if ($Interaction) { 'lyrics-interaction' } else { 'lyrics-verification' }
+& $adb -s $Serial pull "/sdcard/Android/data/cn.ting.music/files/$folder" artifacts
+$marker = if ($Interaction) { 'LYRICS_INTERACTION_PASS' } else { 'LYRICS_NATIVE_PASS' }
+if (($result -join "`n") -notmatch $marker) { throw 'Native lyrics integration failed' }
