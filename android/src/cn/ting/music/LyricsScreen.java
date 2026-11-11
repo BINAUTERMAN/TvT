@@ -23,16 +23,31 @@ final class LyricsScreen {
     return new Rect(0, 0, Math.max(1, metrics.widthPixels), Math.max(1, metrics.heightPixels));
   }
 
-  static Rect safe(Context context, WindowManager windows, WindowInsets delivered) {
-    Rect area = full(windows);
-    WindowInsets insets = delivered;
-    if (insets == null && Build.VERSION.SDK_INT >= 30) {
+  private static WindowInsets displayInsets(WindowManager windows) {
+    if (Build.VERSION.SDK_INT >= 30) {
+      Rect area = full(windows);
       WindowMetrics metrics = windows.getCurrentWindowMetrics();
       Rect reported = metrics.getBounds();
       // 旋转时窗口配置可能晚于物理屏幕更新，不能混用两个方向的尺寸和边距。
       if (reported.width() == area.width() && reported.height() == area.height())
-        insets = metrics.getWindowInsets();
+        return metrics.getWindowInsets();
     }
+    return null;
+  }
+
+  static int statusBarHeight(Context context, WindowManager windows) {
+    WindowInsets insets = displayInsets(windows);
+    if (insets != null) {
+      int top = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top;
+      if (top > 0) return top;
+    }
+    return dimension(context, "status_bar_height");
+  }
+
+  static Rect safe(Context context, WindowManager windows, WindowInsets delivered) {
+    Rect area = full(windows);
+    // 回调边距相对于悬浮窗，会随窗口位置改变；整屏坐标只能使用整屏边距。
+    WindowInsets insets = Build.VERSION.SDK_INT >= 30 ? displayInsets(windows) : delivered;
     int left = 0, top = dimension(context, "status_bar_height"), right = 0, bottom = 0;
     if (insets != null && Build.VERSION.SDK_INT >= 30) {
       android.graphics.Insets bars =

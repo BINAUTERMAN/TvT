@@ -95,7 +95,7 @@ onUnmounted(() => {
       </label>
       <p class="muted">
         需要悬浮窗权限。部分系统会遮挡状态栏区域，请用 5
-        秒预览确认；可调节垂直偏移和镜头两侧位置，避开时间、电量与刘海。
+        秒预览确认。默认在状态栏内按屏幕中线居中，可调节水平位置、垂直偏移，或手动选择左右侧。
       </p>
       <p v-if="settings.error" class="login-error" role="alert">
         {{ settings.error }}
@@ -108,15 +108,15 @@ onUnmounted(() => {
         预览状态栏位置（5秒）
       </button>
       <label class="setting-row">
-        <span>镜头两侧位置</span>
+        <span>显示位置</span>
         <select
-          aria-label="状态栏歌词镜头两侧位置"
+          aria-label="状态栏歌词显示位置"
           :value="settings.side"
           @change="side"
         >
-          <option value="auto">自动选择可用一侧</option>
-          <option value="left">靠左侧</option>
-          <option value="right">靠右侧</option>
+          <option value="auto">屏幕居中</option>
+          <option value="left">状态栏左侧</option>
+          <option value="right">状态栏右侧</option>
         </select>
       </label>
       <div

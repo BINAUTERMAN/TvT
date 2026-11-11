@@ -18,6 +18,7 @@ final class StatusBarLyrics {
   private LyricsOverlayView text;
   private WindowManager.LayoutParams layout;
   private boolean previewing;
+  private final Runnable displayRefresh = () -> place();
 
   StatusBarLyrics(Context source) {
     context = LyricsScreen.windowContext(source);
@@ -179,7 +180,7 @@ final class StatusBarLyrics {
           WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
     panel.setOnApplyWindowInsetsListener(
         (view, insets) -> {
-          place();
+          onDisplayChanged();
           return insets;
         });
     panel.addOnLayoutChangeListener(
@@ -200,11 +201,13 @@ final class StatusBarLyrics {
   private void place() {
     if (panel == null || layout == null) return;
     Rect full = LyricsScreen.full(windows);
+    String side = saved().getString("lyricsStatusSide", "auto");
+    boolean centered = side.equals("auto");
     int left = Math.min(dp(56), full.width() / 4),
         right = Math.max(left + 1, full.width() - dp(72));
     int splitLeft = -1, splitRight = -1;
-    int bar = Math.max(dp(24), LyricsScreen.dimension(context, "status_bar_height"));
-    if (Build.VERSION.SDK_INT >= 29) {
+    int bar = Math.max(1, LyricsScreen.statusBarHeight(context, windows));
+    if (!centered && Build.VERSION.SDK_INT >= 29) {
       DisplayCutout cutout = windows.getDefaultDisplay().getCutout();
       if (cutout != null)
         for (Rect rect : cutout.getBoundingRects()) {
@@ -218,16 +221,18 @@ final class StatusBarLyrics {
           }
         }
     }
-    String side = saved().getString("lyricsStatusSide", "auto");
     if (splitLeft >= 0) {
-      boolean takeLeft =
-          side.equals("left") || (side.equals("auto") && splitLeft - left >= right - splitRight);
+      boolean takeLeft = side.equals("left");
       if (takeLeft) right = splitLeft;
       else left = splitRight;
     } else if (!side.equals("auto")) {
       int middle = (left + right) / 2;
       if (side.equals("left")) right = middle;
       else left = middle;
+    }
+    if (centered) {
+      left = 0;
+      right = full.width();
     }
     left = Math.min(left, full.width() - 1);
     right = Math.max(left + 1, Math.min(right, full.width()));
@@ -260,11 +265,15 @@ final class StatusBarLyrics {
       hide();
       return;
     }
-    place();
+    if (panel != null) {
+      panel.removeCallbacks(displayRefresh);
+      panel.postOnAnimation(displayRefresh);
+    }
   }
 
   void hide() {
     handler.removeCallbacks(endPreview);
+    if (panel != null) panel.removeCallbacks(displayRefresh);
     previewing = false;
     if (text != null) text.stop();
     if (panel != null)

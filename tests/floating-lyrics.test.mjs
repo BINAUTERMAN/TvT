@@ -384,6 +384,17 @@ test('状态栏歌词独立开关、预览、位置和恢复默认（原生桥�
     await setup(page);
     const panel = page.locator('.status-lyrics-settings');
     await panel.locator('fieldset:not([disabled])').waitFor();
+    const position = panel.getByLabel('状态栏歌词显示位置', { exact: true });
+    assert.equal(await position.inputValue(), 'auto');
+    assert.equal(
+      await position.locator('option:checked').textContent(),
+      '屏幕居中',
+    );
+    await position.selectOption('left');
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    assert.equal(await position.inputValue(), 'left');
+    await position.selectOption('auto');
+    await panel.locator('fieldset:not([disabled])').waitFor();
     await panel.getByLabel('开启状态栏歌词', { exact: true }).click();
     await panel.locator('fieldset:not([disabled])').waitFor();
     assert.equal(

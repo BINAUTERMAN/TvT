@@ -125,6 +125,56 @@ public final class LyricsInteractionChecks extends Instrumentation {
     image.recycle();
   }
 
+  private void stableLandscape() throws Exception {
+    main(
+        () -> {
+          saved.edit().putFloat("lyricsLandscapeY", .006f).apply();
+          call(overlay, "onDisplayChanged", new Class<?>[0]);
+        });
+    idle();
+    Rect[] initial = new Rect[1];
+    int[] startY = new int[1];
+    main(
+        () -> {
+          initial[0] = new Rect((Rect) field(overlay, "bounds"));
+          startY[0] = layout().y;
+        });
+    boolean[] stable = {true};
+    int resource = target.getResources().getIdentifier("status_bar_height", "dimen", "android");
+    int bar = target.getResources().getDimensionPixelSize(resource);
+    for (int i = 0; i < 24; i++) {
+      final int top = i % 2 == 0 ? 0 : bar;
+      final boolean immersive = i < 12;
+      main(
+          () -> {
+            WindowInsetsController controller = activity.getWindow().getInsetsController();
+            if (immersive) controller.hide(WindowInsets.Type.systemBars());
+            else controller.show(WindowInsets.Type.systemBars());
+            WindowInsets local =
+                new WindowInsets.Builder()
+                    .setInsetsIgnoringVisibility(
+                        WindowInsets.Type.statusBars(), Insets.of(0, top, 0, 0))
+                    .build();
+            call(overlay, "updateDisplay", new Class<?>[] {WindowInsets.class}, local);
+            stable[0] &=
+                initial[0].equals(field(overlay, "bounds")) && layout().y == startY[0];
+            panel().requestApplyInsets();
+          });
+      SystemClock.sleep(70);
+    }
+    check("Window-local insets cannot move the landscape lyric between two positions", stable[0]);
+    main(
+        () -> {
+          int[] at = new int[2];
+          panel().getLocationOnScreen(at);
+          check(
+              "Fullscreen system-bar changes keep the actual lyric window at the same height",
+              Math.abs(at[1] - startY[0]) <= 1
+                  && initial[0].equals(field(overlay, "bounds")));
+        });
+    screenshot("landscape-stable.png");
+  }
+
   private MotionEvent touch(int action, float x) {
     return MotionEvent.obtain(
         SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), action, x, 30, 0);
@@ -204,7 +254,7 @@ public final class LyricsInteractionChecks extends Instrumentation {
           .putFloat("lyricsPortraitX", .15f)
           .putFloat("lyricsPortraitY", .65f)
           .putFloat("lyricsLandscapeX", .7f)
-          .putFloat("lyricsLandscapeY", .2f)
+          .putFloat("lyricsLandscapeY", .006f)
           .apply();
       overlay = construct("FloatingLyrics");
       JSONObject line =
@@ -235,8 +285,10 @@ public final class LyricsInteractionChecks extends Instrumentation {
       rotate(UiAutomation.ROTATION_FREEZE_90, "lyricsLandscape");
       check("Rotation keeps the same overlay window", original == panel());
       screenshot("landscape-90.png");
+      stableLandscape();
       rotate(UiAutomation.ROTATION_FREEZE_270, "lyricsLandscape");
       screenshot("landscape-270.png");
+      stableLandscape();
       rotate(UiAutomation.ROTATION_FREEZE_0, "lyricsPortrait");
 
       SeekBar[] slider = new SeekBar[1];
@@ -421,29 +473,14 @@ public final class LyricsInteractionChecks extends Instrumentation {
                 "Status lyrics are single-line and touch-through",
                 (params.flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
                     && params.alpha <= .8f);
-            DisplayCutout cutout =
-                target.getSystemService(WindowManager.class).getDefaultDisplay().getCutout();
-            boolean avoidsCutout = true;
-            int clockOffset = 0;
-            if (cutout != null)
-              for (Rect rect : cutout.getBoundingRects()) {
-                avoidsCutout &=
-                    !Rect.intersects(
-                        rect,
-                        new Rect(
-                            point[0],
-                            point[1],
-                            point[0] + view.getWidth(),
-                            point[1] + view.getHeight()));
-                if (rect.left == 0 && rect.top == 0)
-                  clockOffset = Math.max(clockOffset, rect.right);
-              }
+            android.util.DisplayMetrics display = new android.util.DisplayMetrics();
+            target.getSystemService(WindowManager.class).getDefaultDisplay().getRealMetrics(display);
             check(
-                "Status lyrics avoid camera cutouts and relocated clock area",
-                avoidsCutout
-                    && point[0]
-                        >= clockOffset
-                            + Math.round(56 * target.getResources().getDisplayMetrics().density));
+                "Status lyrics stay centered on the physical screen, including cutout displays",
+                Math.abs(point[0] * 2 + view.getWidth() - display.widthPixels) <= 1);
+            check(
+                "Status lyrics center vertically within the status bar",
+                Math.abs(point[1] * 2 + view.getHeight() - bar) <= 1);
           });
       screenshot("status-bar.png");
       Bitmap statusImage = getUiAutomation().takeScreenshot();
