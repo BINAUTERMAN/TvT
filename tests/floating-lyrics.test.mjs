@@ -392,12 +392,23 @@ test('参数条防误触、拖动精调与恢复默认确认（原生桥替身�
       ),
       0,
     );
-    const center = box.x + 10 + ((box.width - 20) * (20 - 12)) / (48 - 12);
-    await page.mouse.move(center, box.y + box.height / 2);
+    // 吸顶过渡会改变控件位置，拖动前等待过渡并重新读取坐标。
+    await page.locator('.lyrics-preview-dock').evaluate(async (element) => {
+      await Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished),
+      );
+    });
+    await slider.scrollIntoViewIfNeeded();
+    const dragBox = await slider.boundingBox();
+    const center =
+      dragBox.x + 10 + ((dragBox.width - 20) * (20 - 12)) / (48 - 12);
+    await page.mouse.move(center, dragBox.y + dragBox.height / 2);
     await page.mouse.down();
     await page.mouse.move(
-      center + (box.width - 20) * 0.3,
-      box.y + box.height / 2,
+      center + (dragBox.width - 20) * 0.3,
+      dragBox.y + dragBox.height / 2,
       { steps: 6 },
     );
     await page.mouse.up();
