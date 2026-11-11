@@ -68,6 +68,7 @@ public final class PlaybackService extends Service {
   private String quality = "128";
   private String resolvedQuality = "128";
   private FloatingLyrics floatingLyrics;
+  private boolean lyricBuffering;
   private final java.util.List<Long> lyricTimes = new java.util.ArrayList<>();
   private final java.util.List<JSONObject> lyricLines = new java.util.ArrayList<>();
   private final BroadcastReceiver displayChanged =
@@ -351,6 +352,7 @@ public final class PlaybackService extends Service {
       case "speed":
         speed = Math.max(.5f, Math.min(2f, (float) data.optDouble("speed", 1)));
         if (isPlaying()) media.setPlaybackParams(media.getPlaybackParams().setSpeed(speed));
+        updateFloatingLyrics();
         emit();
         break;
       case "bass":
@@ -472,11 +474,19 @@ public final class PlaybackService extends Service {
                     media.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
                     media.setOnInfoListener(
                         (player, what, extra) -> {
-                          if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) playbackBuffer.stop();
-                          else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) refreshBuffer();
+                          if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
+                            playbackBuffer.stop();
+                            lyricBuffering = true;
+                            floatingLyrics.stopAnimation();
+                          } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
+                            lyricBuffering = false;
+                            updateFloatingLyrics();
+                            refreshBuffer();
+                          }
                           return false;
                         });
                     media.setDataSource(this, Uri.parse(address));
+                    media.setOnSeekCompleteListener(player -> updateFloatingLyrics());
                     media.setOnPreparedListener(
                         player -> {
                           prepared = true;
@@ -575,6 +585,7 @@ public final class PlaybackService extends Service {
     fadeToPause();
     checkpoint();
     handler.removeCallbacks(lyricTick);
+    floatingLyrics.stopAnimation();
     handler.removeCallbacks(periodicCheckpoint);
     audio.abandonAudioFocusRequest(focus);
     showNotification();
@@ -626,6 +637,7 @@ public final class PlaybackService extends Service {
       fadeToPause();
       handler.removeCallbacks(lyricTick);
       checkpoint();
+      floatingLyrics.stopAnimation();
       handler.removeCallbacks(periodicCheckpoint);
       showNotification();
       emit();
@@ -968,7 +980,7 @@ public final class PlaybackService extends Service {
   }
 
   public void refreshFloatingLyrics() {
-    floatingLyrics.refresh();
+    floatingLyrics.hide();
     updateFloatingLyrics();
     showNotification();
   }
@@ -995,9 +1007,8 @@ public final class PlaybackService extends Service {
     long next = active + 1 < lyricTimes.size() ? lyricTimes.get(active + 1) : Long.MAX_VALUE;
     if (active >= 0 && active < lyricLines.size()) {
       JSONObject line = lyricLines.get(active);
-      String upcoming =
-          active + 1 < lyricLines.size() ? lyricLines.get(active + 1).optString("text") : "";
-      floatingLyrics.showLine(line, upcoming, position);
+      JSONObject upcoming = active + 1 < lyricLines.size() ? lyricLines.get(active + 1) : null;
+      floatingLyrics.showLine(line, upcoming, active, position, isPlaying() && !lyricBuffering, speed);
       next = Math.min(next, AirLyricsProgress.nextBoundary(line, position));
     } else floatingLyrics.show(item.optString("title"));
     if (isPlaying() && next < Long.MAX_VALUE)
@@ -1005,6 +1016,8 @@ public final class PlaybackService extends Service {
   }
 
   private void releaseMedia() {
+    lyricBuffering = false;
+    if (floatingLyrics != null) floatingLyrics.stopAnimation();
     handler.removeCallbacks(finishFade);
     fadingOut = false;
     if (envelope != null) {
@@ -1069,6 +1082,9 @@ public final class PlaybackService extends Service {
   @Override
   public void onConfigurationChanged(android.content.res.Configuration configuration) {
     super.onConfigurationChanged(configuration);
-    if (floatingLyrics != null) floatingLyrics.refresh();
+    if (floatingLyrics != null) {
+      floatingLyrics.hide();
+      updateFloatingLyrics();
+    }
   }
 }

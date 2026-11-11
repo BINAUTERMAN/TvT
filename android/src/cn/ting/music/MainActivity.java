@@ -519,11 +519,11 @@ public final class MainActivity extends Activity {
             () -> {
               try {
                 if (action.equals("floatingSettings")) {
-                  JSONObject value =
-                      FloatingLyrics.settings(MainActivity.this, new JSONObject(source));
-                  if (PlaybackService.instance != null)
+                  JSONObject updates = new JSONObject(source);
+                  FloatingLyrics.settings(MainActivity.this, updates);
+                  if (updates.length() > 0 && PlaybackService.instance != null)
                     PlaybackService.instance.refreshFloatingLyrics();
-                  resolve(id, value, null);
+                  resolve(id, FloatingLyrics.settings(MainActivity.this, new JSONObject()), null);
                   return;
                 }
                 if (action.equals("overlay")) {

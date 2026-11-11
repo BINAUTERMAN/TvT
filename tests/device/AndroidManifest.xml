@@ -10,4 +10,5 @@
     <instrumentation android:name="cn.ting.music.tests.CacheChecks" android:targetPackage="cn.ting.music" android:label="听屿离线缓存验证" />
     <instrumentation android:name="cn.ting.music.tests.BufferChecks" android:targetPackage="cn.ting.music" android:label="听屿预缓存验证" />
     <instrumentation android:name="cn.ting.music.tests.StarChecks" android:targetPackage="cn.ting.music" android:label="TvT 提醒与品牌验证" />
+    <instrumentation android:name="cn.ting.music.tests.LyricsChecks" android:targetPackage="cn.ting.music" android:label="TvT 原生桌面歌词验证" />
 </manifest>
