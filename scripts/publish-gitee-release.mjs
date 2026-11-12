@@ -137,5 +137,12 @@ for (const [name, bytes] of [
     );
 }
 if (!existing || existing.prerelease)
-  await write(`${api}/releases/${release.id}`, 'PATCH', { prerelease: false });
+  // Gitee 更新发行版时仍要求标签、名称和说明，不能只发送状态字段。
+  await write(`${api}/releases/${release.id}`, 'PATCH', {
+    ...details,
+    prerelease: false,
+  });
+const published = await (await request(`${api}/releases/tags/${tag}`)).json();
+if (published.prerelease !== false || published.tag_name !== tag)
+  throw new Error('Gitee 未确认发行版已转为稳定版');
 console.log(`Gitee 同步完成并通过匿名下载校验：${repository} ${tag}`);

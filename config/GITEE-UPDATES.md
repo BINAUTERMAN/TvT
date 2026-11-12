@@ -11,6 +11,8 @@
 
 发布脚本先创建预览发行版，上传两份附件并通过匿名下载校验后才转为稳定发行版。已存在的稳定发行版只检查，不覆盖。若同步失败，修复权限或容量问题后重跑任务；GitHub 上已发布的原始文件会被下载用于同步。
 
+仅补同步已有发行版时，在 Actions 中运行 **Gitee release sync**，输入原始 GitHub 发行标签。该任务下载原始 APK 和清单，使用原发行说明，不重新构建或覆盖 GitHub 发行版。
+
 可选：在 GitHub Actions Variables 中设置 `GITEE_REPOSITORY`，或本地构建时设置 `TING_GITEE_REPOSITORY`，以覆盖配置的 Gitee 仓库。Android 签名仍使用现有发布密钥。
 
 ## 客户端行为

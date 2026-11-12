@@ -26,6 +26,10 @@ if (mode.startsWith('stable')) {
     fs.readFileSync(directory + 'update-manifest.json'),
   );
 }
+if (mode === 'preview') {
+  release = { id: 7, tag_name: '5.4', prerelease: true, assets: [] };
+  attach(manifest.file, fs.readFileSync(directory + manifest.file));
+}
 process.on('exit', () => fs.writeFileSync('trace.json', JSON.stringify(trace)));
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status });
@@ -58,11 +62,19 @@ globalThis.fetch = async (address, options = {}) => {
   }
   if (method === 'PATCH' && url === base + '/releases/7') {
     const data = JSON.parse(options.body);
+    if (!data.tag_name || !data.name || !data.body)
+      return json({ message: 'tag_name, name and body are required' }, 400);
+    if (data.prerelease === true) {
+      trace.writes.push('update-preview');
+      release = { ...release, ...data };
+      return json(release);
+    }
     if (data.prerelease !== false || trace.downloads.length !== 2)
       throw new Error('匿名校验完成前不得发布');
     trace.writes.push('publish-stable');
     trace.released = true;
-    return json({ ...release, prerelease: false });
+    release = { ...release, prerelease: false };
+    return json(release);
   }
   if (
     method === 'GET' &&
