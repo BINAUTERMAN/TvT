@@ -1,0 +1,48 @@
+name: Gitee release sync
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '需要同步的已有 GitHub 正式发行标签，例如 5.4'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      TING_GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download original GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Invalid release tag' }
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $release.draft -or $release.prerelease) { throw 'Select an existing stable GitHub release' }
+          New-Item -ItemType Directory -Force artifacts/release | Out-Null
+          gh release download $env:RELEASE_TAG --dir artifacts/release --pattern 'update-manifest.json'
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest download failed' }
+          $manifest = Get-Content artifacts/release/update-manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.file -notmatch '^[A-Za-z0-9_.-]+\.apk$') { throw 'Invalid APK filename' }
+          if ($manifest.tag -and $manifest.tag -ne $env:RELEASE_TAG) { throw 'Manifest tag mismatch' }
+          gh release download $env:RELEASE_TAG --dir artifacts/release --pattern $manifest.file
+          if ($LASTEXITCODE -ne 0) { throw 'APK download failed' }
+          [IO.File]::WriteAllText((Join-Path $PWD 'config/release-notes.txt'), $release.body, [Text.UTF8Encoding]::new($false))
+      - name: Verify publisher protocol
+        run: node --test tests/gitee-release.test.mjs
+      - name: Publish verified Gitee mirror
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: node scripts/publish-gitee-release.mjs

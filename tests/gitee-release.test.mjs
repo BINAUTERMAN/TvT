@@ -106,3 +106,15 @@ test('已有稳定版内容冲突时失败且不覆盖', async () => {
     assert.deepEqual(trace.writes, []);
   });
 });
+test('同步中断后补传缺失附件，并携带完整元数据转为稳定版', async () => {
+  await publish('preview', (result, trace) => {
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(trace.writes, [
+      'update-preview',
+      'upload:update-manifest.json',
+      'publish-stable',
+    ]);
+    assert.equal(trace.downloads.length, 2);
+    assert.equal(trace.released, true);
+  });
+});
