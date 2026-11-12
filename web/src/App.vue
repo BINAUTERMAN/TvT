@@ -14,12 +14,12 @@ import {
   Pause,
   SkipForward,
   ListMusic,
-  X,
   Download,
   Moon,
   Check,
 } from 'lucide-vue-next';
 import Artwork from './components/Artwork.vue';
+import AppDrawer from './components/AppDrawer.vue';
 import PlayerView from './components/PlayerView.vue';
 import LibraryView from './components/LibraryView.vue';
 import AccountPanel from './components/AccountPanel.vue';
@@ -258,7 +258,15 @@ function updateAppearance() {
 watch(() => library.theme, updateAppearance, { immediate: true });
 function visibility() {
   pageVisible.value = !document.hidden;
-  if (document.hidden) dockObserver?.disconnect();
+  if (document.hidden) {
+    dockObserver?.disconnect();
+    for (const animation of document.getAnimations()) {
+      if (animation.effect?.getComputedTiming().iterations === Infinity)
+        animation.cancel();
+      else animation.finish();
+    }
+  }
+  document.body.classList.toggle('backgrounded', document.hidden);
   if (!document.hidden) {
     observeDock();
     void command('state');
@@ -372,44 +380,58 @@ onUnmounted(() => {
           <UserRound v-else :size="21" />
         </button>
       </header>
-      <CatalogDetail
-        v-if="details.length"
-        :key="`${details.at(-1)!.kind}:${details.at(-1)!.id}`"
-        :item="details.at(-1)!"
-        @back="details.pop()"
-        @open="openEntity"
-        @menu="menu"
-      />
-      <div v-show="!details.length">
-        <PersonalHome
-          :key="String(profile.loggedIn)"
-          v-show="tab === 'discover'"
-          @open="openEntity"
-          @menu="menu"
-          @explore="navigate('explore')"
-          @account="sheet = 'account'"
-        />
-        <ExploreView
-          v-if="visited.has('explore')"
-          v-show="tab === 'explore'"
-          @open="openEntity"
-          @menu="menu"
-        />
-        <SearchView
-          :active="tab === 'search'"
-          v-if="visited.has('search')"
-          v-show="tab === 'search'"
-          @open="openEntity"
-          @menu="menu"
-          @focus="searchFocused = $event"
-        />
-        <LibraryView
-          v-if="visited.has('library')"
-          v-show="tab === 'library'"
-          v-model:collection="collection"
-          @menu="menu"
-          @sheet="sheet = $event"
-        />
+      <div class="page-stage">
+        <Transition name="page" mode="out-in">
+          <CatalogDetail
+            v-if="details.length"
+            :key="`${details.at(-1)!.kind}:${details.at(-1)!.id}`"
+            :item="details.at(-1)!"
+            @back="details.pop()"
+            @open="openEntity"
+            @menu="menu"
+          />
+        </Transition>
+        <Transition name="page">
+          <div v-show="!details.length" class="tab-stage">
+            <Transition name="page">
+              <PersonalHome
+                :key="String(profile.loggedIn)"
+                v-show="tab === 'discover'"
+                @open="openEntity"
+                @menu="menu"
+                @explore="navigate('explore')"
+                @account="sheet = 'account'"
+              />
+            </Transition>
+            <Transition name="page">
+              <ExploreView
+                v-if="visited.has('explore')"
+                v-show="tab === 'explore'"
+                @open="openEntity"
+                @menu="menu"
+              />
+            </Transition>
+            <Transition name="page">
+              <SearchView
+                :active="tab === 'search'"
+                v-if="visited.has('search')"
+                v-show="tab === 'search'"
+                @open="openEntity"
+                @menu="menu"
+                @focus="searchFocused = $event"
+              />
+            </Transition>
+            <Transition name="page">
+              <LibraryView
+                v-if="visited.has('library')"
+                v-show="tab === 'library'"
+                v-model:collection="collection"
+                @menu="menu"
+                @sheet="sheet = $event"
+              />
+            </Transition>
+          </div>
+        </Transition>
       </div>
     </main>
     <div
@@ -468,313 +490,279 @@ onUnmounted(() => {
       @menu="menu"
       @sheet="sheet = $event"
     />
-    <Transition name="sheet">
-      <div v-if="sheet" class="modal-backdrop" @click.self="sheet = ''">
-        <section
-          class="sheet-panel"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="sheet"
+    <AppDrawer :name="sheet" @close="sheet = ''">
+      <template v-if="sheet === 'track' && selected">
+        <div class="sheet-track">
+          <Artwork :src="selected.cover" :seed="selected.title" />
+          <div>
+            <h2>{{ selected.title }}</h2>
+            <p>{{ selected.artist }}</p>
+          </div>
+        </div>
+        <button
+          class="menu-item"
+          @click="
+            toggleFavorite(selected);
+            sheet = '';
+          "
         >
-          <div class="sheet-handle" />
-          <button
-            v-if="sheet !== 'star'"
-            class="icon close-sheet"
-            aria-label="关闭"
-            @click="sheet = ''"
-          >
-            <X :size="23" />
-          </button>
-          <template v-if="sheet === 'track' && selected">
-            <div class="sheet-track">
-              <Artwork :src="selected.cover" :seed="selected.title" />
-              <div>
-                <h2>{{ selected.title }}</h2>
-                <p>{{ selected.artist }}</p>
-              </div>
-            </div>
-            <button
-              class="menu-item"
-              @click="
-                toggleFavorite(selected);
-                sheet = '';
-              "
-            >
-              <Heart :size="21" />
-              {{ isLiked(selected!) ? '取消喜欢' : '加入我喜欢' }}
-            </button>
-            <button
-              class="menu-item"
-              @click="
-                command('enqueue', { track: selected });
-                sheet = '';
-                notify('已加入播放队列');
-              "
-            >
-              <ListMusic :size="21" />
-              加入播放队列
-            </button>
-            <button class="menu-item" @click="sheet = 'add'">
-              <Plus :size="21" />
-              添加到歌单
-            </button>
-            <button
-              v-if="selected.hash && !selected.uri"
-              class="menu-item"
-              :disabled="cacheState(selected) !== ''"
-              @click="cacheSelected"
-            >
-              <Download :size="21" />
-              {{
-                cacheState(selected) === 'ready'
-                  ? '已缓存 · 可离线播放'
-                  : cacheState(selected) === 'pending'
-                    ? '正在缓存'
-                    : '缓存歌曲'
-              }}
-            </button>
-            <button
-              v-if="collection && collection !== 'history'"
-              class="menu-item danger"
-              @click="removeFromCollection"
-            >
-              {{
-                collection === 'local' && selected.cached
-                  ? '删除缓存'
-                  : '从当前列表移除'
-              }}
-            </button>
-          </template>
-          <template v-if="sheet === 'create'">
-            <h2>新建歌单</h2>
-            <form @submit.prevent="createPlaylist">
-              <input
-                v-model="playlistName"
-                class="text-input"
-                autofocus
-                maxlength="40"
-                placeholder="给歌单起个名字"
-                aria-label="歌单名称"
-              />
-              <button
-                class="primary full-width"
-                :disabled="!playlistName.trim()"
-              >
-                创建歌单
-              </button>
-            </form>
-          </template>
-          <template v-if="sheet === 'add'">
-            <h2>添加到歌单</h2>
-            <button
-              v-for="list in library.playlists"
-              :key="list.id"
-              class="menu-item"
-              @click="addToPlaylist(list.id)"
-            >
-              <ListMusic :size="21" />
-              {{ list.name }}
-            </button>
-            <p v-if="!library.playlists.length" class="muted">
-              还没有歌单，先在资料库创建一张吧。
-            </p>
-          </template>
-          <template v-if="sheet === 'delete'">
-            <h2>删除这张歌单？</h2>
-            <p class="muted">歌单中的音乐文件不会被删除。</p>
-            <button
-              class="primary danger-bg"
-              @click="
-                library.playlists = library.playlists.filter(
-                  (p) => p.id !== collection,
-                );
-                collection = '';
-                sheet = '';
-              "
-            >
-              确认删除
-            </button>
-          </template>
-          <QueuePanel v-if="sheet === 'queue'" />
-          <template v-if="sheet === 'sleep'">
-            <h2>让音乐陪你入睡</h2>
-            <p class="muted">到时自动暂停播放。</p>
-            <button
-              v-for="minutes in [15, 30, 45, 60, 90]"
-              :key="minutes"
-              class="menu-item"
-              @click="
-                command('sleep', { minutes });
-                sheet = '';
-                notify(`将在 ${minutes} 分钟后暂停`);
-              "
-            >
-              <Moon :size="20" />
-              {{ minutes }} 分钟
-            </button>
-            <button
-              class="menu-item"
-              @click="
-                command('sleep', { minutes: 0 });
-                sheet = '';
-              "
-            >
-              关闭定时
-            </button>
-          </template>
-          <template v-if="sheet === 'sound'">
-            <QualityPanel />
-            <label class="setting-row">
-              <span>播放速度</span>
-              <div class="speed-options">
-                <button
-                  v-for="value in ['0.75', '1', '1.25', '1.5', '2']"
-                  :key="value"
-                  :class="{ selected: speed === value }"
-                  @click="
-                    speed = value;
-                    command('speed', { speed: Number(value) });
-                  "
-                >
-                  {{ value }}×
-                </button>
-              </div>
-            </label>
-            <label class="setting-row">
-              <span>轻柔低音增强</span>
-              <input
-                v-model="equalizer"
-                type="checkbox"
-                @change="command('bass', { enabled: equalizer })"
-              />
-            </label>
-            <p class="muted">音效取决于设备支持情况。</p>
-          </template>
-          <template v-if="sheet === 'settings'">
-            <h2>偏好设置</h2>
-            <h3>外观</h3>
-            <div class="theme-options">
-              <button
-                v-for="option in themeOptions"
-                :key="option.id"
-                :class="{ selected: library.theme === option.id }"
-                @click="library.theme = option.id"
-              >
-                {{ option.name }}
-                <Check v-if="library.theme === option.id" :size="15" />
-              </button>
-            </div>
-
-            <h3>播放与后台</h3>
-            <label
-              v-for="option in [
-                {
-                  key: 'resumeOnLaunch' as const,
-                  name: '重新打开时恢复上次播放',
-                },
-                { key: 'autoVip' as const, name: '打开应用时自动签到' },
-                { key: 'floatingLyrics' as const, name: '桌面歌词' },
-                { key: 'preloadAudio' as const, name: '预缓存后续歌曲' },
-              ]"
-              :key="option.key"
-              class="setting-row"
-            >
-              <span>{{ option.name }}</span>
-              <input
-                type="checkbox"
-                :checked="preferences[option.key]"
-                @change="changePreference($event, option.key)"
-              />
-            </label>
-            <p class="muted">
-              桌面歌词需要悬浮窗权限，支持自定义配色、布局和边缘吸附。
-            </p>
-            <p class="muted">
-              预缓存：Wi-Fi 两首，移动网络一首；省电或省流量模式下停止。
-            </p>
-            <button class="menu-item" @click="sheet = 'lyricsSettings'">
-              桌面歌词设置
-            </button>
-            <button
-              class="menu-item"
-              @click="
-                checkNotifications();
-                sheet = 'notifications';
-              "
-            >
-              锁屏与悬浮通知
-            </button>
-            <h3>音乐与存储</h3>
-            <button
-              class="menu-item"
-              @click="
-                command('exportLibrary', {
-                  version: 1,
-                  favorites: library.favorites,
-                  playlists: library.playlists,
-                })
-              "
-            >
-              备份资料库
-            </button>
-            <button class="menu-item" @click="command('importLibrary')">
-              导入资料库备份
-            </button>
-            <button class="menu-item" @click="openCache">管理歌曲缓存</button>
-            <button
-              class="menu-item"
-              @click="
-                command('import');
-                sheet = '';
-              "
-            >
-              <FolderDown :size="20" />
-              导入本地音乐
-            </button>
-            <p class="muted">
-              歌曲通过平台接口获取，登录后按账号已有权限播放。
-            </p>
-            <h3>关于TvT</h3>
-            <button class="menu-item" @click="sheet = 'updates'">
-              应用更新
-            </button>
-            <button class="text-button" @click="sheet = 'licenses'">
-              开源许可
-            </button>
-            <p class="muted">
-              {{ updates.currentVersion }} · 安卓版
-              <br />
-              无广告 SDK，无用户行为分析。
-              <br />
-              GPL-2.0-only · 非酷狗官方应用。
-            </p>
-          </template>
-          <template v-if="sheet === 'account'">
-            <AccountPanel />
-            <button
-              v-if="profile.loggedIn"
-              class="menu-item"
-              @click="sheet = 'vip'"
-            >
-              概念版 VIP 与领取记录
-            </button>
-            <button class="menu-item" @click="sheet = 'settings'">
-              <Settings2 :size="20" />
-              偏好设置
-            </button>
-          </template>
-          <FloatingLyricsPanel v-if="sheet === 'lyricsSettings'" />
-          <VipPanel v-if="sheet === 'vip'" />
-          <NotificationPanel
-            v-if="sheet === 'notifications'"
-            @close="sheet = ''"
+          <Heart :size="21" />
+          {{ isLiked(selected!) ? '取消喜欢' : '加入我喜欢' }}
+        </button>
+        <button
+          class="menu-item"
+          @click="
+            command('enqueue', { track: selected });
+            sheet = '';
+            notify('已加入播放队列');
+          "
+        >
+          <ListMusic :size="21" />
+          加入播放队列
+        </button>
+        <button class="menu-item" @click="sheet = 'add'">
+          <Plus :size="21" />
+          添加到歌单
+        </button>
+        <button
+          v-if="selected.hash && !selected.uri"
+          class="menu-item"
+          :disabled="cacheState(selected) !== ''"
+          @click="cacheSelected"
+        >
+          <Download :size="21" />
+          {{
+            cacheState(selected) === 'ready'
+              ? '已缓存 · 可离线播放'
+              : cacheState(selected) === 'pending'
+                ? '正在缓存'
+                : '缓存歌曲'
+          }}
+        </button>
+        <button
+          v-if="collection && collection !== 'history'"
+          class="menu-item danger"
+          @click="removeFromCollection"
+        >
+          {{
+            collection === 'local' && selected.cached
+              ? '删除缓存'
+              : '从当前列表移除'
+          }}
+        </button>
+      </template>
+      <template v-if="sheet === 'create'">
+        <h2>新建歌单</h2>
+        <form @submit.prevent="createPlaylist">
+          <input
+            v-model="playlistName"
+            class="text-input"
+            autofocus
+            maxlength="40"
+            placeholder="给歌单起个名字"
+            aria-label="歌单名称"
           />
-          <UpdatePanel v-if="sheet === 'updates'" />
-          <LicensePanel v-if="sheet === 'licenses'" />
-          <StarPrompt v-if="sheet === 'star'" @close="sheet = ''" />
-        </section>
-      </div>
-    </Transition>
+          <button class="primary full-width" :disabled="!playlistName.trim()">
+            创建歌单
+          </button>
+        </form>
+      </template>
+      <template v-if="sheet === 'add'">
+        <h2>添加到歌单</h2>
+        <button
+          v-for="list in library.playlists"
+          :key="list.id"
+          class="menu-item"
+          @click="addToPlaylist(list.id)"
+        >
+          <ListMusic :size="21" />
+          {{ list.name }}
+        </button>
+        <p v-if="!library.playlists.length" class="muted">
+          还没有歌单，先在资料库创建一张吧。
+        </p>
+      </template>
+      <template v-if="sheet === 'delete'">
+        <h2>删除这张歌单？</h2>
+        <p class="muted">歌单中的音乐文件不会被删除。</p>
+        <button
+          class="primary danger-bg"
+          @click="
+            library.playlists = library.playlists.filter(
+              (p) => p.id !== collection,
+            );
+            collection = '';
+            sheet = '';
+          "
+        >
+          确认删除
+        </button>
+      </template>
+      <QueuePanel v-if="sheet === 'queue'" />
+      <template v-if="sheet === 'sleep'">
+        <h2>让音乐陪你入睡</h2>
+        <p class="muted">到时自动暂停播放。</p>
+        <button
+          v-for="minutes in [15, 30, 45, 60, 90]"
+          :key="minutes"
+          class="menu-item"
+          @click="
+            command('sleep', { minutes });
+            sheet = '';
+            notify(`将在 ${minutes} 分钟后暂停`);
+          "
+        >
+          <Moon :size="20" />
+          {{ minutes }} 分钟
+        </button>
+        <button
+          class="menu-item"
+          @click="
+            command('sleep', { minutes: 0 });
+            sheet = '';
+          "
+        >
+          关闭定时
+        </button>
+      </template>
+      <template v-if="sheet === 'sound'">
+        <QualityPanel />
+        <label class="setting-row">
+          <span>播放速度</span>
+          <div class="speed-options">
+            <button
+              v-for="value in ['0.75', '1', '1.25', '1.5', '2']"
+              :key="value"
+              :class="{ selected: speed === value }"
+              @click="
+                speed = value;
+                command('speed', { speed: Number(value) });
+              "
+            >
+              {{ value }}×
+            </button>
+          </div>
+        </label>
+        <label class="setting-row">
+          <span>轻柔低音增强</span>
+          <input
+            v-model="equalizer"
+            type="checkbox"
+            @change="command('bass', { enabled: equalizer })"
+          />
+        </label>
+        <p class="muted">音效取决于设备支持情况。</p>
+      </template>
+      <template v-if="sheet === 'settings'">
+        <h2>偏好设置</h2>
+        <h3>外观</h3>
+        <div class="theme-options">
+          <button
+            v-for="option in themeOptions"
+            :key="option.id"
+            :class="{ selected: library.theme === option.id }"
+            @click="library.theme = option.id"
+          >
+            {{ option.name }}
+            <Check v-if="library.theme === option.id" :size="15" />
+          </button>
+        </div>
+
+        <h3>播放与后台</h3>
+        <label
+          v-for="option in [
+            {
+              key: 'resumeOnLaunch' as const,
+              name: '重新打开时恢复上次播放',
+            },
+            { key: 'autoVip' as const, name: '打开应用时自动签到' },
+            { key: 'floatingLyrics' as const, name: '桌面歌词' },
+            { key: 'preloadAudio' as const, name: '预缓存后续歌曲' },
+          ]"
+          :key="option.key"
+          class="setting-row"
+        >
+          <span>{{ option.name }}</span>
+          <input
+            type="checkbox"
+            :checked="preferences[option.key]"
+            @change="changePreference($event, option.key)"
+          />
+        </label>
+        <p class="muted">桌面歌词支持大部分自定义内容。</p>
+        <button class="menu-item" @click="sheet = 'lyricsSettings'">
+          桌面歌词设置
+        </button>
+        <button
+          class="menu-item"
+          @click="
+            checkNotifications();
+            sheet = 'notifications';
+          "
+        >
+          锁屏与悬浮通知
+        </button>
+        <h3>音乐与存储</h3>
+        <button
+          class="menu-item"
+          @click="
+            command('exportLibrary', {
+              version: 1,
+              favorites: library.favorites,
+              playlists: library.playlists,
+            })
+          "
+        >
+          备份资料库
+        </button>
+        <button class="menu-item" @click="command('importLibrary')">
+          导入资料库备份
+        </button>
+        <button class="menu-item" @click="openCache">管理歌曲缓存</button>
+        <button
+          class="menu-item"
+          @click="
+            command('import');
+            sheet = '';
+          "
+        >
+          <FolderDown :size="20" />
+          导入本地音乐
+        </button>
+        <h3>关于TvT</h3>
+        <button class="menu-item" @click="sheet = 'updates'">应用更新</button>
+        <button class="text-button" @click="sheet = 'licenses'">
+          开源许可
+        </button>
+        <p class="muted">
+          {{ updates.currentVersion }} · 安卓版
+          <br />
+          无广告 SDK，无用户行为分析。
+          <br />
+          GPL-2.0-only · 非酷狗官方应用。
+        </p>
+      </template>
+      <template v-if="sheet === 'account'">
+        <AccountPanel />
+        <button
+          v-if="profile.loggedIn"
+          class="menu-item"
+          @click="sheet = 'vip'"
+        >
+          概念版 VIP 与领取记录
+        </button>
+        <button class="menu-item" @click="sheet = 'settings'">
+          <Settings2 :size="20" />
+          偏好设置
+        </button>
+      </template>
+      <FloatingLyricsPanel v-if="sheet === 'lyricsSettings'" />
+      <VipPanel v-if="sheet === 'vip'" />
+      <NotificationPanel v-if="sheet === 'notifications'" @close="sheet = ''" />
+      <UpdatePanel v-if="sheet === 'updates'" />
+      <LicensePanel v-if="sheet === 'licenses'" />
+      <StarPrompt v-if="sheet === 'star'" @close="sheet = ''" />
+    </AppDrawer>
     <Transition name="toast">
       <div v-if="toast.text" class="toast" role="status">
         {{ toast.text }}

@@ -40,9 +40,7 @@ async function confirm() {
       <span>自动检查更新</span>
       <input type="checkbox" :checked="updates.enabled" @change="toggle" />
     </label>
-    <p class="muted">
-      打开应用时检查 GitHub 稳定发行版，发现新版后提示，由你确认下载和安装。
-    </p>
+    <p class="muted">发现新版时提醒，由你确认下载和安装。</p>
     <button
       class="menu-item"
       :disabled="updates.checking"
@@ -51,9 +49,7 @@ async function confirm() {
       <RefreshCw :size="20" />
       {{ updates.checking ? '正在检查…' : '检查更新' }}
     </button>
-    <p v-if="!updates.configured" class="muted">
-      此构建尚未配置更新仓库，发布到 GitHub 后可启用。
-    </p>
+    <p v-if="!updates.configured" class="muted">此构建尚未配置更新源。</p>
     <section v-if="updates.release.available" class="release-notes">
       <h3>
         {{ updates.release.rollback ? '回退修复版' : '发现新版本' }}

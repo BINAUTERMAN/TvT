@@ -74,7 +74,7 @@ final class StatusBarLyrics {
         .put("horizontal", saved.getInt("lyricsStatusHorizontal", 50))
         .put("vertical", saved.getInt("lyricsStatusVertical", 0))
         .put("side", saved.getString("lyricsStatusSide", "auto"))
-        .put("hideLandscape", saved.getBoolean("lyricsStatusHideLandscape", true))
+        .put("hideLandscape", saved.getBoolean("lyricsStatusHideLandscape", false))
         .put("color", saved.getString("lyricsStatusColor", "#ffffff"))
         .put("sungColor", saved.getString("lyricsStatusSungColor", "#00d9e9"))
         .put("error", saved.getString("lyricsStatusError", ""));
@@ -131,7 +131,7 @@ final class StatusBarLyrics {
 
   private boolean hiddenInLandscape() {
     Rect full = LyricsScreen.full(windows);
-    return saved().getBoolean("lyricsStatusHideLandscape", true) && full.width() > full.height();
+    return saved().getBoolean("lyricsStatusHideLandscape", false) && full.width() > full.height();
   }
 
   private void ensurePanel() {

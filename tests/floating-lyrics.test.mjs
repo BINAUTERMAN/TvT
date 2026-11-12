@@ -37,7 +37,7 @@ async function setup(page, permission = true, expanded = true) {
       horizontal: 50,
       vertical: 0,
       side: 'auto',
-      hideLandscape: true,
+      hideLandscape: false,
       color: '#ffffff',
       sungColor: '#00d9e9',
       error: '',
@@ -57,6 +57,20 @@ async function setup(page, permission = true, expanded = true) {
           result = { configured: false, enabled: false };
         if (action === 'updateStatus') result = { state: 'idle' };
         if (action === 'starStatus') result = { eligible: false };
+        if (action === 'floatingPreview') {
+          const canvas = document.createElement('canvas');
+          canvas.width = 720;
+          canvas.height = payload.mode === 'single' ? 64 : 120;
+          const paint = canvas.getContext('2d');
+          paint.fillStyle = payload.textColor;
+          paint.font = `${payload.size * 2}px sans-serif`;
+          paint.fillText('原生预览替身', 20, 48);
+          result = {
+            image: canvas.toDataURL('image/png'),
+            width: canvas.width,
+            height: canvas.height,
+          };
+        }
         if (action === 'overlay') {
           if (!saved.permission && payload.enabled)
             error = '请允许悬浮窗权限，返回后将自动开启桌面歌词';
@@ -140,6 +154,15 @@ async function idle(page) {
   await page.locator('.floating-settings > fieldset:not([disabled])').waitFor();
 }
 
+async function choose(page, label, option) {
+  await page.getByRole('combobox', { name: label, exact: true }).click();
+  await page
+    .getByRole('listbox', { name: label, exact: true })
+    .getByRole('option', { name: option, exact: true })
+    .click();
+  await idle(page);
+}
+
 async function change(page, label, value, commit = true) {
   await page.getByLabel(label, { exact: true }).evaluate(
     (input, { value, commit }) => {
@@ -185,13 +208,11 @@ test('桌面歌词手机和平板布局、配色与参数保存（原生桥替�
           ).length,
       );
       await change(page, '歌词字号', 32, false);
-      assert.equal(
-        await page
-          .locator('.floating-preview')
-          .evaluate((el) =>
-            getComputedStyle(el).getPropertyValue('--preview-font'),
-          ),
-        '32px',
+      await page.waitForFunction(() =>
+        window.lyricsCalls.some(
+          (call) =>
+            call.action === 'floatingPreview' && call.payload.size === 32,
+        ),
       );
       assert.equal(
         await page.evaluate(
@@ -206,6 +227,8 @@ test('桌面歌词手机和平板布局、配色与参数保存（原生桥替�
       );
       await change(page, '歌词字号', 32);
       await change(page, '歌词窗口宽度', 100);
+      await change(page, '歌词整体不透明度', 30);
+      await change(page, '歌词整体不透明度', 100);
       await change(page, '已唱颜色', '#123abc');
       await change(page, '未唱颜色', '#abcdef');
       await change(page, '歌词背景不透明度', 0);
@@ -214,27 +237,23 @@ test('桌面歌词手机和平板布局、配色与参数保存（原生桥替�
       await idle(page);
       await page.getByLabel('平滑逐字与长句移动', { exact: true }).uncheck();
       await idle(page);
-      await page
-        .getByLabel('歌词文字对齐', { exact: true })
-        .selectOption('left');
-      await idle(page);
-      assert.equal(
-        await page
-          .locator('.floating-preview strong span')
-          .evaluate((el) => getComputedStyle(el).color),
-        'rgb(18, 58, 188)',
+      await choose(page, '歌词文字对齐', '居左');
+      await choose(page, '歌词显示模式', '单行原文');
+      await page.waitForFunction(() =>
+        window.lyricsCalls.some(
+          (call) =>
+            call.action === 'floatingPreview' &&
+            call.payload.align === 'left' &&
+            call.payload.mode === 'single' &&
+            call.payload.highlightColor === '#123abc',
+        ),
       );
-      assert.equal(
-        await page
-          .locator('.floating-preview')
-          .evaluate((el) => getComputedStyle(el).textAlign),
-        'left',
+      assert.equal(await page.locator('select').count(), 0);
+      assert.ok(
+        (
+          await page.locator('.floating-preview').getAttribute('src')
+        ).startsWith('data:image/png;base64,'),
       );
-      await page
-        .getByLabel('歌词显示模式', { exact: true })
-        .selectOption('single');
-      await idle(page);
-      assert.equal(await page.locator('.floating-preview small').count(), 0);
       assert.equal(
         await page.getByLabel('歌词副行字号比例', { exact: true }).isDisabled(),
         true,
@@ -469,16 +488,25 @@ test('状态栏歌词独立开关、预览、位置和恢复默认（原生桥�
     await setup(page);
     const panel = page.locator('.status-lyrics-settings');
     await panel.locator('fieldset:not([disabled])').waitFor();
-    const position = panel.getByLabel('状态栏歌词显示位置', { exact: true });
-    assert.equal(await position.inputValue(), 'auto');
-    assert.equal(
-      await position.locator('option:checked').textContent(),
-      '屏幕居中',
-    );
-    await position.selectOption('left');
+    const hideLandscape = panel.getByLabel('横屏时隐藏状态栏歌词', {
+      exact: true,
+    });
+    assert.equal(await hideLandscape.isChecked(), false);
+    await hideLandscape.click();
     await panel.locator('fieldset:not([disabled])').waitFor();
-    assert.equal(await position.inputValue(), 'left');
-    await position.selectOption('auto');
+    assert.equal(await hideLandscape.isChecked(), true);
+    await hideLandscape.click();
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    const position = panel.getByRole('combobox', {
+      name: '状态栏歌词显示位置',
+      exact: true,
+    });
+    assert.equal(await position.getAttribute('data-value'), 'auto');
+    assert.equal((await position.textContent()).trim(), '屏幕居中');
+    await choose(page, '状态栏歌词显示位置', '状态栏左侧');
+    await panel.locator('fieldset:not([disabled])').waitFor();
+    assert.equal(await position.getAttribute('data-value'), 'left');
+    await choose(page, '状态栏歌词显示位置', '屏幕居中');
     await panel.locator('fieldset:not([disabled])').waitFor();
     await panel.getByLabel('开启状态栏歌词', { exact: true }).click();
     await panel.locator('fieldset:not([disabled])').waitFor();
@@ -592,6 +620,107 @@ test('桌面歌词保存失败回退、权限拒绝和返回前台同步（原�
       ),
       before,
     );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('歌词折叠区平滑开合、自定义菜单键盘操作与后台停止预览（原生桥替身）', async () => {
+  const browser = await chromium.launch({
+    executablePath: browserPath,
+    headless: true,
+  });
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+    });
+    await setup(page, true, false);
+    for (const title of ['文字与配色', '状态栏歌词']) {
+      const section = page
+        .locator('.lyrics-details')
+        .filter({ has: page.locator('summary', { hasText: title }) });
+      await section.locator('summary').click();
+      await page.waitForFunction((title) => {
+        const section = [...document.querySelectorAll('.lyrics-details')].find(
+          (element) => element.querySelector('summary').textContent === title,
+        );
+        const opacity = Number(
+          getComputedStyle(section.querySelector('.disclosure-body')).opacity,
+        );
+        return opacity > 0 && opacity < 1;
+      }, title);
+      await page.waitForFunction(
+        () => !document.querySelector('.fold-enter-active'),
+      );
+      assert.equal(await section.evaluate((element) => element.open), true);
+      await section.locator('summary').click();
+      await page.waitForFunction(
+        (title) =>
+          ![...document.querySelectorAll('.lyrics-details')].find(
+            (element) => element.querySelector('summary').textContent === title,
+          ).open,
+        title,
+      );
+    }
+    const mode = page.getByRole('combobox', {
+      name: '歌词显示模式',
+      exact: true,
+    });
+    await mode.focus();
+    await mode.press('ArrowUp');
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute('role') === 'option',
+    );
+    assert.equal(
+      (await page.locator(':focus').textContent()).trim(),
+      '双行交替',
+    );
+    await page.locator(':focus').press('Enter');
+    await idle(page);
+    assert.equal(await mode.getAttribute('data-value'), 'next');
+    await mode.evaluate((element) => {
+      element.click();
+      element.click();
+      element.click();
+    });
+    await page
+      .getByRole('listbox', { name: '歌词显示模式', exact: true })
+      .getByRole('option', { name: '单行原文', exact: true })
+      .click();
+    await idle(page);
+    assert.equal(await mode.getAttribute('data-value'), 'single');
+    await mode.click();
+    await mode.press('Escape');
+    assert.equal(await mode.getAttribute('aria-expanded'), 'false');
+    assert.equal(
+      await page
+        .getByRole('dialog', { name: 'lyricsSettings', exact: true })
+        .count(),
+      1,
+    );
+    await page.waitForTimeout(100);
+    const requests = await page.evaluate(
+      () =>
+        window.lyricsCalls.filter((call) => call.action === 'floatingPreview')
+          .length,
+    );
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        value: true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(150);
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.lyricsCalls.filter((call) => call.action === 'floatingPreview')
+            .length,
+      ),
+      requests,
+    );
+    assert.equal(await page.locator('select').count(), 0);
   } finally {
     await browser.close();
   }

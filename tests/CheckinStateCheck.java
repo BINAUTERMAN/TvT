@@ -27,6 +27,12 @@ public final class CheckinStateCheck {
       throw new AssertionError("无错误码的失败响应不能当作成功");
 
     long now = 1_700_000_000_000L;
+    if (CheckinRepository.shouldRetryProbe(true, false, now - 60_000, now))
+      throw new AssertionError("失败探活不能短时间重复请求");
+    if (!CheckinRepository.shouldRetryProbe(true, false, now - 900_000, now))
+      throw new AssertionError("失败探活应由程序在前台入口到期重试");
+    if (CheckinRepository.shouldRetryProbe(true, true, now - 900_000, now))
+      throw new AssertionError("正常探活不应重复请求");
     if (CheckinRepository.nextDelayMs(0, 0, now, false) != 0)
       throw new AssertionError("当天尚未领取时应立即领取");
     if (CheckinRepository.nextDelayMs(1, now - 30_000, now, false) != 30_000)

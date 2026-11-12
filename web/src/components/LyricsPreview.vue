@@ -1,5 +1,46 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { native } from '../bridge';
+const props = defineProps<{
+  settings: { width: number; size: number } & object;
+}>();
+const preview = ref<{ image: string; width: number; height: number }>();
+const error = ref(false);
+let timer = 0;
+let version = 0;
+let rendering = false;
+let disposed = false;
+function schedule() {
+  clearTimeout(timer);
+  version++;
+  if (!document.hidden && !disposed) timer = window.setTimeout(render, 50);
+}
+async function render() {
+  if (document.hidden || disposed || rendering) return;
+  const request = version;
+  rendering = true;
+  try {
+    const result = await native<{
+      image: string;
+      width: number;
+      height: number;
+    }>('floatingPreview', props.settings);
+    if (!result?.image?.startsWith('data:image/png;base64,'))
+      throw new Error('预览暂不可用');
+    if (request === version && !document.hidden && !disposed) {
+      preview.value = result;
+      error.value = false;
+    }
+  } catch {
+    if (request === version && !document.hidden && !disposed)
+      error.value = true;
+  } finally {
+    rendering = false;
+    if (request !== version && !document.hidden && !disposed)
+      timer = window.setTimeout(render, 0);
+  }
+}
+watch(() => props.settings, schedule, { deep: true });
 const sentinel = ref<HTMLElement>();
 const pinned = ref(false);
 const paused = ref(document.hidden);
@@ -7,6 +48,7 @@ let observer: IntersectionObserver | undefined;
 function observe() {
   observer?.disconnect();
   paused.value = document.hidden;
+  schedule();
   if (document.hidden || !sentinel.value) return;
   observer = new IntersectionObserver(
     ([entry]) => {
@@ -26,6 +68,9 @@ onMounted(() => {
   document.addEventListener('visibilitychange', observe);
 });
 onUnmounted(() => {
+  disposed = true;
+  version++;
+  clearTimeout(timer);
   observer?.disconnect();
   document.removeEventListener('visibilitychange', observe);
 });
@@ -37,8 +82,18 @@ onUnmounted(() => {
     :class="{ 'is-pinned': pinned, 'is-paused': paused }"
   >
     <div class="lyrics-preview-stage" aria-label="桌面歌词外观预览">
-      <span class="preview-caption">外观预览</span>
-      <slot />
+      <img
+        v-if="preview"
+        class="floating-preview"
+        :src="preview.image"
+        :width="preview.width"
+        :height="preview.height"
+        :style="{ width: `${settings.width}%` }"
+        alt="桌面歌词效果"
+      />
+      <button v-if="error" class="text-button" @click="schedule">
+        重新加载预览
+      </button>
     </div>
   </div>
 </template>
@@ -70,10 +125,11 @@ onUnmounted(() => {
     box-shadow 0.28s,
     border-radius 0.28s;
 }
-.preview-caption {
-  font-size: 10px;
-  color: var(--muted);
-  letter-spacing: 0.1em;
+.floating-preview {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 .is-pinned .lyrics-preview-stage {
   min-height: 84px;
@@ -83,9 +139,9 @@ onUnmounted(() => {
     0 1px 3px #00000008;
   animation: preview-lift 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.is-pinned :deep(.floating-preview) {
-  font-size: min(var(--preview-font), 22px) !important;
-  padding: 6px 10px;
+.is-pinned .floating-preview {
+  width: auto !important;
+  max-height: 70px;
 }
 @keyframes preview-lift {
   0% {
@@ -114,8 +170,8 @@ onUnmounted(() => {
     min-height: 64px;
     padding: 4px 0;
   }
-  .is-pinned :deep(.floating-preview small) {
-    display: none;
+  .is-pinned .floating-preview {
+    max-height: 48px;
   }
 }
 </style>

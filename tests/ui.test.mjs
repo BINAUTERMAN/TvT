@@ -66,6 +66,12 @@ test('真实榜单标准哈希与分类分组映射', () => {
 });
 
 async function settled(page) {
+  await page.waitForFunction(
+    () =>
+      !document.querySelector(
+        '[class*="-enter-active"], [class*="-leave-active"]',
+      ),
+  );
   await page.evaluate(() =>
     Promise.allSettled(
       document
@@ -1139,7 +1145,18 @@ test('探活失败提示改用畅听，探活恢复后按次累计签到奖励',
       .waitFor();
     await page.getByRole('button', { name: '领取一天畅听 VIP' }).waitFor();
     await page.screenshot({ path: 'artifacts/vip-fallback-390.png' });
-    await page.getByRole('button', { name: '重新探活接口' }).click();
+    assert.equal(
+      await page.getByRole('button', { name: '重新探活接口' }).count(),
+      0,
+    );
+    await page.evaluate(() => {
+      window.vipProbed = true;
+      window.dispatchEvent(
+        new CustomEvent('ting:checkin', {
+          detail: window.vipCheckinState(true, 0),
+        }),
+      );
+    });
     await page.getByText('今日签到奖励 0/8', { exact: true }).waitFor();
     assert.equal(
       await page
@@ -1290,6 +1307,7 @@ test('热门联想、两种排序、歌词搜歌、原唱与十条搜索记录',
       /晴天现场/,
     );
     await page.getByRole('button', { name: '匹配优先', exact: true }).click();
+    await settled(page);
     assert.match(
       await page.locator('.search-page .track-row').first().textContent(),
       /测试原唱/,
@@ -1335,6 +1353,7 @@ test('热门联想、两种排序、歌词搜歌、原唱与十条搜索记录',
       ),
       10,
     );
+    await settled(page);
     await page.screenshot({ path: 'artifacts/search-lyrics-390.png' });
     await input.fill('晴天');
     await input.focus();
@@ -1911,7 +1930,7 @@ test('播放五首后的 Star 提醒排队显示，两种选择均只出现一�
       );
       assert.equal(await page.locator('.star-prompt').count(), 0);
       await page
-          .getByText('桌面歌词需要悬浮窗权限，支持自定义配色、布局和边缘吸附。', {
+        .getByText('桌面歌词支持大部分自定义内容。', {
           exact: true,
         })
         .waitFor();
@@ -1929,6 +1948,7 @@ test('播放五首后的 Star 提醒排队显示，两种选择均只出现一�
           { exact: true },
         )
         .waitFor();
+      await settled(page);
       const boxes = await page
         .locator('.star-actions button')
         .evaluateAll((items) =>

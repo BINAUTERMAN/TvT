@@ -310,8 +310,9 @@ final class FloatingLyrics {
                 public void update(JSONObject changes) {
                   try {
                     settings(context, changes);
-                    if (changes.length() == 1 && changes.has("locked")) transitionLock(locked());
-                    else refresh();
+                    if (PlaybackService.instance != null)
+                      PlaybackService.instance.configureFloatingLyrics(changes);
+                    else if (!applySettings(changes)) refresh();
                   } catch (Exception error) {
                     Toast.makeText(context, error.getMessage(), Toast.LENGTH_SHORT).show();
                   }
@@ -373,14 +374,8 @@ final class FloatingLyrics {
     if (Build.VERSION.SDK_INT >= 30)
       layout.layoutInDisplayCutoutMode =
           WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
-    layout.alpha = preferences().getInt("lyricsOpacity", 100) / 100f;
-    if (locked && android.os.Build.VERSION.SDK_INT >= 31) {
-      float maximum =
-          context
-              .getSystemService(android.hardware.input.InputManager.class)
-              .getMaximumObscuringOpacityForTouch();
-      layout.alpha = Math.min(layout.alpha, Math.min(.78f, maximum));
-    }
+    layout.alpha = windowAlpha(locked);
+    text.setAlpha(editing && !locked ? lyricsAlpha() : 1);
     layout.x = bounds.left + LyricsGeometry.restore(relativeX, bounds.width() - layout.width);
     layout.y = bounds.top + LyricsGeometry.restore(relativeY, bounds.height());
     panel.addOnLayoutChangeListener(
@@ -465,6 +460,22 @@ final class FloatingLyrics {
     transitionEditor(!lock, lock);
   }
 
+  boolean applySettings(JSONObject updates) {
+    if (panel == null || updates.length() != 1) return false;
+    if (updates.has("locked")) {
+      applyLockChange();
+      return true;
+    }
+    if (!updates.has("opacity")) return false;
+    // 调整透明度时保留窗口与触摸目标，控制按钮始终清晰可用。
+    cancelTransition();
+    layout.alpha = windowAlpha(locked());
+    text.setAlpha(editing && !locked() ? lyricsAlpha() : 1);
+    tools.setOpacity(preferences().getInt("lyricsOpacity", 100));
+    updateLayout();
+    return true;
+  }
+
   private void transitionEditor(boolean expand, boolean lock) {
     if (panel == null || tools == null) return;
     if (editing == expand && appliedLocked == lock) return;
@@ -478,6 +489,7 @@ final class FloatingLyrics {
     tools.animate().cancel();
     appliedLocked = lock;
     editing = expand;
+    if (!lock) layout.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
     int fromX = layout.x, fromY = layout.y;
     int fromWidth = panel.getWidth(), fromHeight = panel.getHeight();
     int fromTools = tools.getVisibility() == View.VISIBLE ? tools.getHeight() : 0;
@@ -528,6 +540,8 @@ final class FloatingLyrics {
         Math.round((expand ? 75 : preferences().getInt("lyricsBackgroundOpacity", 0)) * 255 / 100f);
     float fromAlpha = layout.alpha;
     float targetAlpha = windowAlpha(lock);
+    float fromTextAlpha = text.getAlpha();
+    float targetTextAlpha = expand && !lock ? lyricsAlpha() : 1;
     ValueAnimator animator = ValueAnimator.ofFloat(0, 1);
     geometryAnimation = animator;
     animator.setDuration(motionEnabled() ? 320 : 0);
@@ -541,6 +555,7 @@ final class FloatingLyrics {
           layout.x = Math.round(fromX + (endX - fromX) * progress);
           layout.y = Math.round(fromY + (endY - fromY) * progress);
           layout.alpha = fromAlpha + (targetAlpha - fromAlpha) * progress;
+          text.setAlpha(fromTextAlpha + (targetTextAlpha - fromTextAlpha) * progress);
           android.view.ViewGroup.LayoutParams params = tools.getLayoutParams();
           params.height = Math.round(fromTools + (targetTools - fromTools) * progress);
           tools.setLayoutParams(params);
@@ -563,7 +578,7 @@ final class FloatingLyrics {
   }
 
   private float windowAlpha(boolean lock) {
-    float alpha = preferences().getInt("lyricsOpacity", 100) / 100f;
+    float alpha = editing && !lock ? 1 : lyricsAlpha();
     if (lock && Build.VERSION.SDK_INT >= 31)
       alpha =
           Math.min(
@@ -576,6 +591,10 @@ final class FloatingLyrics {
     return alpha;
   }
 
+  private float lyricsAlpha() {
+    return Math.max(30, Math.min(100, preferences().getInt("lyricsOpacity", 100))) / 100f;
+  }
+
   private void finishLock(boolean lock) {
     android.view.ViewGroup.LayoutParams params = tools.getLayoutParams();
     params.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -586,6 +605,7 @@ final class FloatingLyrics {
     if (lock) layout.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
     else layout.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
     layout.alpha = windowAlpha(lock);
+    text.setAlpha(editing && !lock ? lyricsAlpha() : 1);
     updateLayout();
     if (closeWhenCollapsed && !editing) {
       closeWhenCollapsed = false;

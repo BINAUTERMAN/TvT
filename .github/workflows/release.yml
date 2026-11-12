@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 20
     env:
       TING_UPDATE_REPOSITORY: ${{ github.repository }}
+      TING_GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       TING_SIGNING_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       TING_KEYSTORE_PATH: ${{ github.workspace }}\build\release.keystore
       TING_ROLLBACK: ${{ inputs.rollback || false }}
@@ -67,6 +68,7 @@ jobs:
               } catch { Start-Sleep -Milliseconds 500 }
             }
             if (!$ready) { throw 'Interface test server did not start' }
+            ./scripts/test-updates.ps1
             npm test
             if ($LASTEXITCODE -ne 0) { throw 'Interface tests failed' }
             node scripts/test-login-protocol.mjs
@@ -79,19 +81,30 @@ jobs:
       - name: Generate update manifest
         shell: pwsh
         run: |
-          $apk = Get-ChildItem artifacts -Filter '*preview.apk' | Select-Object -First 1
-          node scripts/release-manifest.mjs $apk.FullName
+          $versionName = ([xml](Get-Content android/AndroidManifest.xml -Raw)).manifest.GetAttribute('versionName', 'http://schemas.android.com/apk/res/android')
+          node scripts/release-manifest.mjs "artifacts/TvT-$versionName-preview.apk"
       - name: Publish GitHub Release
         if: "!contains(github.event.head_commit.message, '[skip release]')"
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "build-$env:TING_VERSION_CODE"
-          $releaseFiles = @(Get-ChildItem artifacts/release -File | ForEach-Object { $_.FullName })
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version -replace '\.0$', ''
-          gh release create $tag @releaseFiles --target '${{ github.sha }}' --title "TvT $version" --notes-file config/release-notes.txt --latest
+          $tag = $version
+          $releaseFiles = @("artifacts/release/TvT-$version.apk", 'artifacts/release/update-manifest.json')
+          $publishedTarget = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" --jq '.target_commitish' 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($publishedTarget -ne '${{ github.sha }}') { throw 'This version tag already exists for another commit; increment package.json version before publishing' }
+            gh release download $tag --dir artifacts/release --pattern "TvT-$version.apk" --pattern 'update-manifest.json' --clobber
+          } else {
+            gh release create $tag @releaseFiles --target '${{ github.sha }}' --title "TvT $version" --notes-file config/release-notes.txt --latest
+          }
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
+      - name: Publish verified Gitee mirror
+        if: "!contains(github.event.head_commit.message, '[skip release]')"
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: node scripts/publish-gitee-release.mjs
       - name: Remove signing material
         if: always()
         shell: pwsh

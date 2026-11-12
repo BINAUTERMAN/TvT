@@ -36,6 +36,7 @@ public final class PlaybackService extends Service {
   private MediaSession session;
   private final ArtworkLoader artworkLoader = new ArtworkLoader();
   private android.graphics.Bitmap artwork;
+  private android.graphics.drawable.Icon notificationIcon;
   private AudioManager audio;
   private AudioFocusRequest focus;
   private BassBoost bass;
@@ -110,6 +111,7 @@ public final class PlaybackService extends Service {
   public void onCreate() {
     super.onCreate();
     instance = this;
+    notificationIcon = NotificationIcons.status(this);
     api = new KugouApi(this);
     playbackSession = getSharedPreferences("playback", MODE_PRIVATE).getString("starSession", "");
     if (playbackSession.isEmpty()) newPlaybackSession();
@@ -266,7 +268,7 @@ public final class PlaybackService extends Service {
             .putBoolean("lyricsLocked", false)
             .apply();
         floatingLyrics.refresh();
-        loadFloatingLyrics();
+        if (floatingLyrics.enabled() && lyricLines.isEmpty()) loadFloatingLyrics();
         showNotification();
         emit();
         break;
@@ -832,17 +834,23 @@ public final class PlaybackService extends Service {
     if (isPlaying()) handler.postDelayed(periodicCheckpoint, 30000);
     session.setActive(true);
     long position = prepared && media != null ? media.getCurrentPosition() : 0;
+    boolean lyricsEnabled = floatingLyrics.enabled();
+    boolean lyricsLocked = lyricsEnabled && floatingLyrics.locked();
+    int lyricsIcon =
+        lyricsLocked
+            ? R.drawable.ic_lyrics_unlock
+            : lyricsEnabled ? R.drawable.ic_lyrics_active : R.drawable.ic_lyrics;
+    String lyricsLabel = lyricsLocked ? "解锁桌面歌词" : lyricsEnabled ? "关闭桌面歌词" : "开启桌面歌词";
     session.setPlaybackState(
         new PlaybackState.Builder()
-            .addCustomAction(
-                new PlaybackState.CustomAction.Builder("lyrics", "桌面歌词", R.drawable.ic_lyrics)
-                    .build())
             .addCustomAction(
                 new PlaybackState.CustomAction.Builder(
                         "favorite",
                         favoritePending ? "正在同步喜欢" : favorite ? "取消喜欢" : "喜欢并同步酷狗",
                         favorite ? R.drawable.ic_heart_filled : R.drawable.ic_heart)
                     .build())
+            .addCustomAction(
+                new PlaybackState.CustomAction.Builder("lyrics", lyricsLabel, lyricsIcon).build())
             .setActions(
                 PlaybackState.ACTION_PLAY
                     | PlaybackState.ACTION_PAUSE
@@ -862,7 +870,7 @@ public final class PlaybackService extends Service {
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setLargeIcon(artwork)
             .setShowWhen(false)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(notificationIcon)
             .setContentTitle(item.optString("title"))
             .setContentText(item.optString("artist"))
             .setContentIntent(
@@ -896,7 +904,11 @@ public final class PlaybackService extends Service {
                         control("favorite", 4))
                     .build())
             .addAction(
-                new Notification.Action.Builder(R.drawable.ic_lyrics, "桌面歌词", lyricsControl())
+                new Notification.Action.Builder(
+                        android.graphics.drawable.Icon.createWithResource(this, lyricsIcon)
+                            .setTint(lyricsEnabled ? 0xff35baff : 0xff888888),
+                        lyricsLabel,
+                        lyricsControl())
                     .build())
             .setStyle(
                 new Notification.MediaStyle()
@@ -990,8 +1002,9 @@ public final class PlaybackService extends Service {
   }
 
   public void configureFloatingLyrics(JSONObject updates) {
-    if (!(updates.length() == 1 && updates.has("locked"))) floatingLyrics.hide();
-    refreshFloatingLyrics();
+    if (!floatingLyrics.applySettings(updates)) floatingLyrics.hide();
+    updateFloatingLyrics();
+    showNotification();
   }
 
   public void configureStatusBarLyrics() {

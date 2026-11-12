@@ -15,6 +15,7 @@ import { library, play, notify } from '../store';
 import Artwork from './Artwork.vue';
 import TrackList from './TrackList.vue';
 import EntityGrid from './EntityGrid.vue';
+import ContentTransition from './ContentTransition.vue';
 const props = defineProps<{ item: MusicEntity }>();
 const emit = defineEmits<{
   back: [];
@@ -193,30 +194,34 @@ onMounted(() => {
         专辑
       </button>
     </div>
-    <TrackList
-      v-if="section === 'songs'"
-      :tracks="tracks"
-      @menu="emit('menu', $event)"
-    />
-    <EntityGrid v-else :items="albums" @open="emit('open', $event)" />
-    <p v-if="busy" class="loading">正在加载…</p>
-    <div
-      v-if="!busy && !error && !tracks.length && section === 'songs'"
-      class="empty-inline"
+    <ContentTransition
+      :identity="`${section}:${busy && !tracks.length ? 'loading' : 'ready'}`"
     >
-      <p>暂时没有获取到可播放歌曲</p>
-      <button class="text-button" @click="reload">重新加载</button>
-    </div>
-    <div v-if="error" class="inline-error">
-      {{ error }}
-      <button class="text-button" @click="reload">重试</button>
-    </div>
-    <button
-      v-if="more && !busy && section === 'songs'"
-      class="load-more"
-      @click="loadMore"
-    >
-      加载更多
-    </button>
+      <TrackList
+        v-if="section === 'songs'"
+        :tracks="tracks"
+        @menu="emit('menu', $event)"
+      />
+      <EntityGrid v-else :items="albums" @open="emit('open', $event)" />
+      <p v-if="busy" class="loading">正在加载…</p>
+      <div
+        v-if="!busy && !error && !tracks.length && section === 'songs'"
+        class="empty-inline"
+      >
+        <p>暂时没有获取到可播放歌曲</p>
+        <button class="text-button" @click="reload">重新加载</button>
+      </div>
+      <div v-if="error" class="inline-error">
+        {{ error }}
+        <button class="text-button" @click="reload">重试</button>
+      </div>
+      <button
+        v-if="more && !busy && section === 'songs'"
+        class="load-more"
+        @click="loadMore"
+      >
+        加载更多
+      </button>
+    </ContentTransition>
   </section>
 </template>
