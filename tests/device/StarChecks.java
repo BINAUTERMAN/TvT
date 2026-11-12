@@ -4,6 +4,11 @@ import android.app.*;
 import android.content.*;
 import android.content.pm.ApplicationInfo;
 import android.graphics.drawable.AdaptiveIconDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import java.io.File;
+import java.io.FileOutputStream;
 import android.os.Bundle;
 import java.lang.reflect.*;
 import org.json.JSONObject;
@@ -97,6 +102,19 @@ public final class StarChecks extends Instrumentation {
           "Prompt opens the configured TvT repository",
           url.equals("https://github.com/BINAUTERMAN/TvT"));
       ApplicationInfo app = target.getApplicationInfo();
+      File output = new File(target.getExternalFilesDir(null), "branding-verification");
+      output.mkdirs();
+      Drawable[] icons = {app.loadIcon(target.getPackageManager()), target.getDrawable(app.icon)};
+      String[] filenames = {"package-manager-icon.png", "application-resource-icon.png"};
+      for (int index = 0; index < icons.length; index++) {
+        Bitmap image = Bitmap.createBitmap(144, 144, Bitmap.Config.ARGB_8888);
+        icons[index].setBounds(0, 0, 144, 144);
+        icons[index].draw(new Canvas(image));
+        try (FileOutputStream file = new FileOutputStream(new File(output, filenames[index]))) {
+          image.compress(Bitmap.CompressFormat.PNG, 100, file);
+        }
+        image.recycle();
+      }
       check(
           "Installed application label is TvT",
           target.getPackageManager().getApplicationLabel(app).toString().equals("TvT"));

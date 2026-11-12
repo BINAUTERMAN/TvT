@@ -70,10 +70,6 @@ export function refreshCheckin(): Promise<void> {
     });
   return pending;
 }
-/** 手动重新探活，用于接口恢复后当天继续签到。 */
-export async function probeCheckin(): Promise<void> {
-  applyCheckin(await native<CheckinState>('checkinProbe'));
-}
 /** 手动推进一次签到，返回平台实际结果。 */
 export async function stepCheckin(): Promise<CheckinState> {
   const request = generation;

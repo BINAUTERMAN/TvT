@@ -24,7 +24,8 @@ final class LyricsControls extends LinearLayout {
   private final Actions actions;
   private final SharedPreferences saved;
   private final IconButton play;
-  private PopupMenu overflow;
+  private SeekBar opacitySlider;
+  private PopupWindow overflow;
 
   LyricsControls(Context context, SharedPreferences saved, Actions actions) {
     super(context);
@@ -56,35 +57,79 @@ final class LyricsControls extends LinearLayout {
 
   private void menu(View anchor) {
     if (overflow != null) overflow.dismiss();
-    PopupMenu menu = new PopupMenu(getContext(), anchor);
-    overflow = menu;
-    menu.getMenu().add(0, 1, 0, "切换单行 / 双行");
-    menu.getMenu().add(0, 2, 1, "经典蓝配色");
-    menu.getMenu().add(0, 3, 2, "暖金配色");
-    menu.getMenu().add(0, 4, 3, "樱粉配色");
-    menu.getMenu().add(0, 5, 4, "关闭桌面歌词");
-    menu.setOnMenuItemClickListener(
-        item -> {
-          if (item.getItemId() == 1)
-            change(
-                "mode", saved.getString("lyricsMode", "next").equals("single") ? "next" : "single");
-          else if (item.getItemId() == 5) actions.close();
-          else {
-            String[] sung = {FloatingLyrics.DEFAULT_HIGHLIGHT, "#ffe4ac", "#ffacd3"};
-            String[] unsung = {FloatingLyrics.DEFAULT_TEXT, "#ffffff", "#dedee5"};
-            int index = item.getItemId() - 2;
-            try {
-              actions.update(
-                  new JSONObject()
-                      .put("highlightColor", sung[index])
-                      .put("textColor", unsung[index]));
-            } catch (Exception invalid) {
-              throw new IllegalStateException(invalid);
-            }
-          }
-          return true;
-        });
-    menu.show();
+    LinearLayout content = new LinearLayout(getContext());
+    content.setOrientation(VERTICAL);
+    content.setPadding(dp(12), dp(12), dp(12), dp(8));
+    GradientDrawable background = new GradientDrawable();
+    background.setColor(0xff242429);
+    background.setCornerRadius(dp(20));
+    background.setStroke(dp(1), 0x28ffffff);
+    content.setBackground(background);
+    TextView title = label("显示模式");
+    title.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+    title.setTextColor(0x99ffffff);
+    content.addView(title, new LayoutParams(LayoutParams.MATCH_PARENT, dp(28)));
+    LinearLayout modes = new LinearLayout(getContext());
+    content.addView(modes);
+    String[] values = {"single", "translation", "next"};
+    String[] labels = {"单行", "译文", "双行"};
+    for (int index = 0; index < values.length; index++) {
+      String mode = values[index];
+      TextView option = menuChoice(labels[index], mode.equals(saved.getString("lyricsMode", "next")) ? 0xff35baff : Color.WHITE);
+      LayoutParams optionLayout = new LayoutParams(0, dp(44), 1);
+      optionLayout.setMargins(dp(3), 0, dp(3), 0);
+      modes.addView(option, optionLayout);
+      option.setOnClickListener(view -> { overflow.dismiss(); change("mode", mode); });
+    }
+    LinearLayout palettes = new LinearLayout(getContext());
+    LayoutParams paletteLayout = new LayoutParams(LayoutParams.MATCH_PARENT, dp(52));
+    paletteLayout.topMargin = dp(8);
+    content.addView(palettes, paletteLayout);
+    String[] names = {"经典蓝", "暖金", "樱粉"};
+    String[] colors = {FloatingLyrics.DEFAULT_HIGHLIGHT, "#ffe4ac", "#ffacd3"};
+    String[] textColors = {FloatingLyrics.DEFAULT_TEXT, "#ffffff", "#ffffff"};
+    String[] secondaryColors = {FloatingLyrics.DEFAULT_SECONDARY, "#dedee5", "#ead2df"};
+    for (int index = 0; index < names.length; index++) {
+      String color = colors[index];
+      String textColor = textColors[index], secondaryColor = secondaryColors[index];
+      TextView option = menuChoice(names[index], Color.parseColor(color));
+      LayoutParams optionLayout = new LayoutParams(0, dp(44), 1);
+      optionLayout.setMargins(dp(3), 0, dp(3), 0);
+      palettes.addView(option, optionLayout);
+      option.setOnClickListener(view -> {
+        overflow.dismiss();
+        try { actions.update(new JSONObject().put("highlightColor", color).put("textColor", textColor).put("secondaryColor", secondaryColor)); }
+        catch (Exception invalid) { throw new IllegalStateException(invalid); }
+      });
+    }
+    TextView close = menuChoice("关闭桌面歌词", 0xffff8585);
+    content.addView(close, new LayoutParams(LayoutParams.MATCH_PARENT, dp(44)));
+    close.setOnClickListener(view -> { overflow.dismiss(); actions.close(); });
+    PopupWindow popup = new PopupWindow(content, dp(264), LayoutParams.WRAP_CONTENT, true);
+    overflow = popup;
+    popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+    popup.setOutsideTouchable(true);
+    popup.setElevation(dp(14));
+    popup.setAnimationStyle(android.animation.ValueAnimator.areAnimatorsEnabled()
+        && saved.getBoolean("lyricsSmooth", true) ? R.style.LyricsPopupAnimation : 0);
+    popup.showAsDropDown(anchor, 0, dp(6), Gravity.RIGHT);
+  }
+
+  private TextView menuChoice(String name, int color) {
+    TextView option = label(name);
+    option.setTextSize(13);
+    option.setTextColor(color);
+    option.setContentDescription(name);
+    option.setFocusable(true);
+    GradientDrawable background = new GradientDrawable();
+    background.setColor(0x0fffffff);
+    background.setCornerRadius(dp(12));
+    option.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33ffffff), background, null));
+    return option;
+  }
+
+  void setOpacity(int opacity) {
+    opacitySlider.setProgress(opacity);
   }
 
   @Override
@@ -103,6 +148,7 @@ final class LyricsControls extends LinearLayout {
     value.setTextSize(11);
     value.setTextColor(0xbfffffff);
     SeekBar slider = new LyricsSeekBar(getContext());
+    if (key.equals("opacity")) opacitySlider = slider;
     slider.setContentDescription(description);
     slider.setMax(high);
     slider.setMin(low);

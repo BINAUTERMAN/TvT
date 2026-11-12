@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import { native } from '../bridge';
 import { notify } from '../store';
 import LyricsRange from './LyricsRange.vue';
+import OptionPicker from './OptionPicker.vue';
 const settings = reactive({
   enabled: false,
   permission: false,
@@ -11,7 +12,7 @@ const settings = reactive({
   horizontal: 50,
   vertical: 0,
   side: 'auto',
-  hideLandscape: true,
+  hideLandscape: false,
   color: '#ffffff',
   sungColor: '#00d9e9',
   error: '',
@@ -60,9 +61,6 @@ function toggle(event: Event, key: 'enabled' | 'hideLandscape') {
 function color(event: Event, key: 'color' | 'sungColor') {
   void request({ [key]: (event.target as HTMLInputElement).value });
 }
-function side(event: Event) {
-  void request({ side: (event.target as HTMLSelectElement).value });
-}
 function reset() {
   confirmReset.value = false;
   void request({ resetDefaults: true });
@@ -81,9 +79,6 @@ onUnmounted(() => {
 <template>
   <section class="status-lyrics-settings">
     <h3>状态栏歌词</h3>
-    <p class="muted">
-      在屏幕顶端显示独立的小号单行歌词，播放时显示，暂停或熄屏时隐藏。
-    </p>
     <fieldset :disabled="busy || !ready" :aria-busy="busy">
       <label class="setting-row">
         <span>开启状态栏歌词</span>
@@ -93,10 +88,6 @@ onUnmounted(() => {
           @change="toggle($event, 'enabled')"
         />
       </label>
-      <p class="muted">
-        需要悬浮窗权限。部分系统会遮挡状态栏区域，请用 5
-        秒预览确认。默认在状态栏内按屏幕中线居中，可调节水平位置、垂直偏移，或手动选择左右侧。
-      </p>
       <p v-if="settings.error" class="login-error" role="alert">
         {{ settings.error }}
       </p>
@@ -109,15 +100,16 @@ onUnmounted(() => {
       </button>
       <label class="setting-row">
         <span>显示位置</span>
-        <select
-          aria-label="状态栏歌词显示位置"
-          :value="settings.side"
-          @change="side"
-        >
-          <option value="auto">屏幕居中</option>
-          <option value="left">状态栏左侧</option>
-          <option value="right">状态栏右侧</option>
-        </select>
+        <OptionPicker
+          label="状态栏歌词显示位置"
+          :model-value="settings.side"
+          :options="[
+            { value: 'auto', label: '屏幕居中' },
+            { value: 'left', label: '状态栏左侧' },
+            { value: 'right', label: '状态栏右侧' },
+          ]"
+          @update:model-value="request({ side: $event })"
+        />
       </label>
       <div
         v-for="range in ranges"

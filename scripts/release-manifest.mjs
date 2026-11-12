@@ -24,6 +24,7 @@ fs.writeFileSync(
       schema: 1,
       versionCode,
       versionName,
+      tag: versionName,
       file,
       sha256,
       rollback: process.env.TING_ROLLBACK === 'true',

@@ -396,7 +396,6 @@ public final class MainActivity extends Activity {
                   "vipStatus",
                   "checkinStatus",
                   "checkinStep",
-                  "checkinProbe",
                   "updateSettings",
                   "updateCheck",
                   "updateDownload",
@@ -476,7 +475,6 @@ public final class MainActivity extends Activity {
                 else if (action.equals("checkinStatus")) result = api.checkinStatus();
                 else if (action.equals("checkinStep"))
                   result = api.checkinStep(data.optBoolean("manual", true));
-                else if (action.equals("checkinProbe")) result = api.checkinProbe();
                 else if (action.equals("logout")) {
                   api.logout();
                   result = true;
@@ -537,6 +535,10 @@ public final class MainActivity extends Activity {
                           updates.optBoolean("enabled"));
                   }
                   resolve(id, StatusBarLyrics.settings(MainActivity.this, new JSONObject()), null);
+                  return;
+                }
+                if (action.equals("floatingPreview")) {
+                  resolve(id, LyricsPreviewRenderer.render(MainActivity.this, new JSONObject(source)), null);
                   return;
                 }
                 if (action.equals("floatingSettings")) {

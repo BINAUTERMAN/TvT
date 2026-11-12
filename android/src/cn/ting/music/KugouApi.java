@@ -142,10 +142,6 @@ public final class KugouApi {
     return checkin().step(manual);
   }
 
-  public JSONObject checkinProbe() throws Exception {
-    return checkin().probeNow();
-  }
-
   private CheckinRepository checkin() {
     if (appContext == null) throw new IllegalStateException("签到需要应用环境");
     return new CheckinRepository(this, appContext);

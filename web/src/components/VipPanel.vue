@@ -3,11 +3,10 @@ import { computed, onMounted, ref } from 'vue';
 import { Crown, RefreshCw, Gift } from 'lucide-vue-next';
 import { preferences, updatePreference } from '../store';
 import { vip, refreshVip, formatVipExpiry } from '../vip';
-import { checkin, refreshCheckin, probeCheckin, stepCheckin } from '../checkin';
+import { checkin, refreshCheckin, stepCheckin } from '../checkin';
 
 const busy = ref(false);
 const claiming = ref(false);
-const probing = ref(false);
 const error = ref('');
 const message = ref('');
 const activeRights = computed(() => vip.rights.filter((item) => item.active));
@@ -37,7 +36,6 @@ const blocked = computed(
   () =>
     busy.value ||
     claiming.value ||
-    probing.value ||
     vip.todayClaimed ||
     conceptActive.value ||
     (rewardMode.value && checkin.done) ||
@@ -73,20 +71,6 @@ async function claim() {
     claiming.value = false;
   }
 }
-async function reprobe() {
-  probing.value = true;
-  error.value = '';
-  message.value = '';
-  try {
-    await probeCheckin();
-    if (checkin.probe.ok) message.value = '接口探活正常，签到奖励可以继续领取';
-    else error.value = checkin.probe.message || '接口仍未通过探活';
-  } catch (cause) {
-    error.value = (cause as Error).message;
-  } finally {
-    probing.value = false;
-  }
-}
 onMounted(() => void load());
 </script>
 <template>
@@ -118,15 +102,9 @@ onMounted(() => void load());
       <span v-if="checkin.probe.message" class="muted">
         平台返回：{{ checkin.probe.message }}
       </span>
-      <span class="muted">
-        当天改用畅听 VIP 领取；两种方式互斥，不会同时提交。
-      </span>
     </div>
     <div v-else-if="rewardMode" class="checkin-progress">
       <strong>今日签到奖励 {{ checkin.claims }}/{{ checkin.maxClaims }}</strong>
-      <span class="muted">
-        每次约 3 小时畅听，间隔 1 分钟领取；切到后台会暂停，重新打开继续。
-      </span>
     </div>
     <button class="primary full-width" :disabled="blocked" @click="claim">
       <Gift :size="19" />
@@ -151,14 +129,6 @@ onMounted(() => void load());
     <p v-if="error || checkin.error" class="login-error" role="alert">
       {{ error || checkin.error }}
     </p>
-    <button
-      v-if="checkin.probe.checked"
-      class="text-button"
-      :disabled="probing || busy || claiming"
-      @click="reprobe"
-    >
-      {{ probing ? '正在探活' : '重新探活接口' }}
-    </button>
     <label class="setting-row">
       <span>启动时自动签到</span>
       <input

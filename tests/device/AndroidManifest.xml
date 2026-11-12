@@ -12,4 +12,6 @@
     <instrumentation android:name="cn.ting.music.tests.StarChecks" android:targetPackage="cn.ting.music" android:label="TvT 提醒与品牌验证" />
     <instrumentation android:name="cn.ting.music.tests.LyricsChecks" android:targetPackage="cn.ting.music" android:label="TvT 原生桌面歌词验证" />
     <instrumentation android:name="cn.ting.music.tests.LyricsInteractionChecks" android:targetPackage="cn.ting.music" android:label="TvT 歌词旋转与交互验证" />
+    <instrumentation android:name="cn.ting.music.tests.HomeLayoutChecks" android:targetPackage="cn.ting.music" android:label="TvT 主页封面布局验证" />
+    <instrumentation android:name="cn.ting.music.tests.UpdateChecks" android:targetPackage="cn.ting.music" android:label="TvT 更新来源与真实接口验证" />
 </manifest>

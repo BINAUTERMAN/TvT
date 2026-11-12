@@ -1,0 +1,6 @@
+<resources>
+    <style name="LyricsPopupAnimation">
+        <item name="android:windowEnterAnimation">@anim/lyrics_popup_enter</item>
+        <item name="android:windowExitAnimation">@anim/lyrics_popup_exit</item>
+    </style>
+</resources>

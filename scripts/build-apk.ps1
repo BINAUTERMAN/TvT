@@ -22,6 +22,7 @@ New-Item -ItemType Directory -Force build/classes,build/assets/web,artifacts | O
 Copy-Item -Path web/dist/* -Destination build/assets/web -Recurse -Force
 $updateConfig = Get-Content config/update.json -Raw | ConvertFrom-Json
 if ($env:TING_UPDATE_REPOSITORY) { $updateConfig.repository = $env:TING_UPDATE_REPOSITORY }
+if ($env:TING_GITEE_REPOSITORY) { $updateConfig.giteeRepository = $env:TING_GITEE_REPOSITORY }
 [IO.File]::WriteAllText((Join-Path $workspacePath 'build/assets/update.json'), ($updateConfig | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
 Run-Checked "$toolPath/aapt2.exe" @('compile', '--dir', 'android/res', '-o', 'build/resources.zip')
 Run-Checked "$toolPath/aapt2.exe" @('link', '-o', 'build/base.apk', '-I', $androidJar, '--manifest', 'android/AndroidManifest.xml', '--java', 'build/generated', '-A', 'build/assets', 'build/resources.zip')

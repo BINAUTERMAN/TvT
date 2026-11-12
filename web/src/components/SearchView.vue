@@ -9,6 +9,7 @@ import type { MusicEntity, Track } from '../types';
 import Artwork from './Artwork.vue';
 import TrackList from './TrackList.vue';
 import EntityGrid from './EntityGrid.vue';
+import ContentTransition from './ContentTransition.vue';
 import { hotWordsFrom, suggestionsFrom, sortSearchRows } from '../search';
 import type { Suggestion, SearchOrder } from '../search';
 type SearchType = 'all' | 'song' | 'author' | 'album' | 'special' | 'lyric';
@@ -325,168 +326,184 @@ watch(
         </button>
       </div>
     </Transition>
-    <template v-if="submitted">
-      <div class="segmented search-types" role="tablist" aria-label="搜索类型">
-        <button
-          v-for="item in tabs"
-          :key="item.id"
-          role="tab"
-          :aria-label="item.id === 'lyric' ? '歌词搜歌' : item.label"
-          :aria-selected="selected === item.id"
-          :class="{ selected: selected === item.id }"
-          @click="choose(item.id)"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-      <div class="search-order" aria-label="搜索结果排序">
-        <button
-          :aria-pressed="order === 'heat'"
-          :class="{ selected: order === 'heat' }"
-          @click="order = 'heat'"
-        >
-          热度优先
-        </button>
-        <button
-          :aria-pressed="order === 'match'"
-          :class="{ selected: order === 'match' }"
-          @click="order = 'match'"
-        >
-          匹配优先
-        </button>
-        <small class="muted">按已加载结果排序</small>
-      </div>
-      <button
-        v-if="selected === 'all' && best"
-        class="artist-match"
-        @click="emit('open', best)"
-      >
-        <Artwork :src="best.cover" :seed="best.name" />
-        <span>
-          <small>歌手</small>
-          <strong>{{ best.name }}</strong>
-          <span>查看歌手主页</span>
-        </span>
-        <ChevronRight :size="21" />
-      </button>
-      <template v-if="selected === 'all' || selected === 'author'">
+    <ContentTransition :identity="submitted ? 'results' : 'history'">
+      <template v-if="submitted">
         <div
-          v-if="(artists.length && !best) || selected === 'author'"
-          class="section-heading"
+          class="segmented search-types"
+          role="tablist"
+          aria-label="搜索类型"
         >
-          <h2>歌手</h2>
           <button
-            v-if="selected === 'all'"
-            class="text-button"
-            @click="choose('author')"
+            v-for="item in tabs"
+            :key="item.id"
+            role="tab"
+            :aria-label="item.id === 'lyric' ? '歌词搜歌' : item.label"
+            :aria-selected="selected === item.id"
+            :class="{ selected: selected === item.id }"
+            @click="choose(item.id)"
           >
-            全部
-            <ChevronRight :size="16" />
+            {{ item.label }}
           </button>
         </div>
-        <EntityGrid
-          v-if="selected === 'author' || (selected === 'all' && !best)"
-          :items="selected === 'all' ? artists.slice(0, 4) : artists"
-          @open="emit('open', $event)"
-        />
-      </template>
-      <template
-        v-if="selected === 'all' || selected === 'song' || selected === 'lyric'"
-      >
-        <div v-if="songs.length" class="section-heading">
-          <h2>{{ selected === 'lyric' ? '歌词匹配歌曲' : '歌曲' }}</h2>
+        <div class="search-order" aria-label="搜索结果排序">
           <button
-            v-if="selected === 'all'"
-            class="text-button"
-            @click="choose('song')"
+            :aria-pressed="order === 'heat'"
+            :class="{ selected: order === 'heat' }"
+            @click="order = 'heat'"
           >
-            全部
-            <ChevronRight :size="16" />
+            热度优先
           </button>
-        </div>
-        <TrackList
-          :tracks="selected === 'all' ? songs.slice(0, 6) : songs"
-          @menu="emit('menu', $event)"
-        />
-      </template>
-      <template v-if="selected === 'all' || selected === 'album'">
-        <div v-if="albums.length" class="section-heading">
-          <h2>专辑</h2>
           <button
-            v-if="selected === 'all'"
-            class="text-button"
-            @click="choose('album')"
+            :aria-pressed="order === 'match'"
+            :class="{ selected: order === 'match' }"
+            @click="order = 'match'"
           >
-            全部
-            <ChevronRight :size="16" />
+            匹配优先
           </button>
+          <small class="muted">按已加载结果排序</small>
         </div>
-        <EntityGrid
-          :items="selected === 'all' ? albums.slice(0, 4) : albums"
-          @open="emit('open', $event)"
-        />
-      </template>
-      <template v-if="selected === 'all' || selected === 'special'">
-        <div v-if="playlists.length" class="section-heading">
-          <h2>公开歌单</h2>
+        <ContentTransition
+          :identity="`${submitted}:${selected}:${order}:${busy ? 'loading' : 'ready'}`"
+        >
           <button
-            v-if="selected === 'all'"
-            class="text-button"
-            @click="choose('special')"
+            v-if="selected === 'all' && best"
+            class="artist-match"
+            @click="emit('open', best)"
           >
-            全部
-            <ChevronRight :size="16" />
+            <Artwork :src="best.cover" :seed="best.name" />
+            <span>
+              <small>歌手</small>
+              <strong>{{ best.name }}</strong>
+              <span>查看歌手主页</span>
+            </span>
+            <ChevronRight :size="21" />
           </button>
-        </div>
-        <EntityGrid
-          :items="selected === 'all' ? playlists.slice(0, 4) : playlists"
-          @open="emit('open', $event)"
-        />
-      </template>
-      <p v-if="busy" class="loading" role="status">正在查找音乐…</p>
-      <p
-        v-if="!busy && selected !== 'all' && errors[selected]"
-        class="inline-error"
-      >
-        {{ errors[selected] }}
-        <button class="text-button" @click="search()">重试</button>
-      </p>
-      <p
-        v-if="!busy && !Object.values(results).some((list) => list.length)"
-        class="empty"
-      >
-        没有找到结果，可以换一个关键词。
-      </p>
-      <button v-if="hasMore && !busy" class="load-more" @click="loadMore">
-        加载更多
-      </button>
-    </template>
-    <template v-else>
-      <template v-if="library.searches.length">
-        <div class="section-heading">
-          <h2>最近搜索</h2>
-          <button class="text-button" @click="library.searches = []">
-            清空
-          </button>
-        </div>
-        <div class="chips">
-          <button
-            v-for="word in library.searches.slice(0, 10)"
-            :key="word"
-            @click="searchFor(word)"
+          <template v-if="selected === 'all' || selected === 'author'">
+            <div
+              v-if="(artists.length && !best) || selected === 'author'"
+              class="section-heading"
+            >
+              <h2>歌手</h2>
+              <button
+                v-if="selected === 'all'"
+                class="text-button"
+                @click="choose('author')"
+              >
+                全部
+                <ChevronRight :size="16" />
+              </button>
+            </div>
+            <EntityGrid
+              v-if="selected === 'author' || (selected === 'all' && !best)"
+              :items="selected === 'all' ? artists.slice(0, 4) : artists"
+              @open="emit('open', $event)"
+            />
+          </template>
+          <template
+            v-if="
+              selected === 'all' || selected === 'song' || selected === 'lyric'
+            "
           >
-            {{ word }}
+            <div v-if="songs.length" class="section-heading">
+              <h2>{{ selected === 'lyric' ? '歌词匹配歌曲' : '歌曲' }}</h2>
+              <button
+                v-if="selected === 'all'"
+                class="text-button"
+                @click="choose('song')"
+              >
+                全部
+                <ChevronRight :size="16" />
+              </button>
+            </div>
+            <TrackList
+              :tracks="selected === 'all' ? songs.slice(0, 6) : songs"
+              @menu="emit('menu', $event)"
+            />
+          </template>
+          <template v-if="selected === 'all' || selected === 'album'">
+            <div v-if="albums.length" class="section-heading">
+              <h2>专辑</h2>
+              <button
+                v-if="selected === 'all'"
+                class="text-button"
+                @click="choose('album')"
+              >
+                全部
+                <ChevronRight :size="16" />
+              </button>
+            </div>
+            <EntityGrid
+              :items="selected === 'all' ? albums.slice(0, 4) : albums"
+              @open="emit('open', $event)"
+            />
+          </template>
+          <template v-if="selected === 'all' || selected === 'special'">
+            <div v-if="playlists.length" class="section-heading">
+              <h2>公开歌单</h2>
+              <button
+                v-if="selected === 'all'"
+                class="text-button"
+                @click="choose('special')"
+              >
+                全部
+                <ChevronRight :size="16" />
+              </button>
+            </div>
+            <EntityGrid
+              :items="selected === 'all' ? playlists.slice(0, 4) : playlists"
+              @open="emit('open', $event)"
+            />
+          </template>
+          <p v-if="busy" class="loading" role="status">正在查找音乐…</p>
+          <p
+            v-if="!busy && selected !== 'all' && errors[selected]"
+            class="inline-error"
+          >
+            {{ errors[selected] }}
+            <button class="text-button" @click="search()">重试</button>
+          </p>
+          <p
+            v-if="!busy && !Object.values(results).some((list) => list.length)"
+            class="empty"
+          >
+            没有找到结果，可以换一个关键词。
+          </p>
+          <button v-if="hasMore && !busy" class="load-more" @click="loadMore">
+            加载更多
           </button>
-        </div>
+        </ContentTransition>
       </template>
-      <template v-if="hotWords.length">
-        <div class="section-heading"><h2>热搜</h2></div>
-        <div class="chips">
-          <button v-for="word in hotWords" :key="word" @click="searchFor(word)">
-            {{ word }}
-          </button>
-        </div>
+      <template v-else>
+        <template v-if="library.searches.length">
+          <div class="section-heading">
+            <h2>最近搜索</h2>
+            <button class="text-button" @click="library.searches = []">
+              清空
+            </button>
+          </div>
+          <div class="chips">
+            <button
+              v-for="word in library.searches.slice(0, 10)"
+              :key="word"
+              @click="searchFor(word)"
+            >
+              {{ word }}
+            </button>
+          </div>
+        </template>
+        <template v-if="hotWords.length">
+          <div class="section-heading"><h2>热搜</h2></div>
+          <div class="chips">
+            <button
+              v-for="word in hotWords"
+              :key="word"
+              @click="searchFor(word)"
+            >
+              {{ word }}
+            </button>
+          </div>
+        </template>
       </template>
-    </template>
+    </ContentTransition>
   </section>
 </template>

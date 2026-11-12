@@ -6,6 +6,7 @@ import type { Category, CategoryGroup } from '../discovery';
 import type { MusicEntity, Track } from '../types';
 import EntityGrid from './EntityGrid.vue';
 import TrackList from './TrackList.vue';
+import ContentTransition from './ContentTransition.vue';
 const emit = defineEmits<{
   open: [entity: MusicEntity];
   menu: [track: Track];
@@ -175,17 +176,19 @@ onMounted(() => {
     <h1>发现</h1>
     <section class="music-section rank-section">
       <div class="section-heading"><h2>排行榜</h2></div>
-      <EntityGrid
-        v-if="ranks.length"
-        :items="ranks.slice(0, 18)"
-        shelf
-        @open="emit('open', $event)"
-      />
-      <p v-if="rankBusy" class="muted">正在获取音乐榜单…</p>
-      <div v-if="rankError" class="inline-error">
-        {{ rankError }}
-        <button class="text-button" @click="loadRanks(true)">重试</button>
-      </div>
+      <ContentTransition :identity="rankBusy ? 'loading' : 'ready'">
+        <EntityGrid
+          v-if="ranks.length"
+          :items="ranks.slice(0, 18)"
+          shelf
+          @open="emit('open', $event)"
+        />
+        <p v-if="rankBusy" class="muted">正在获取音乐榜单…</p>
+        <div v-if="rankError" class="inline-error">
+          {{ rankError }}
+          <button class="text-button" @click="loadRanks(true)">重试</button>
+        </div>
+      </ContentTransition>
     </section>
     <section class="music-section">
       <div class="section-heading"><h2>分类浏览</h2></div>
@@ -258,23 +261,27 @@ onMounted(() => {
       <div class="section-heading">
         <h2>{{ selectedName }}</h2>
       </div>
-      <EntityGrid
-        v-if="mode === 'lists'"
-        :items="lists"
-        @open="emit('open', $event)"
-      />
-      <TrackList v-else :tracks="tracks" @menu="emit('menu', $event)" />
-      <div v-if="empty" class="empty-inline">
-        <p v-if="emptyNotice">{{ emptyNotice }}</p>
-        <p>
-          {{
-            mode === 'lists'
-              ? '此分类暂时没有公开歌单'
-              : '此分类暂时没有可播放歌曲'
-          }}，可以换个标签或重新加载。
-        </p>
-        <button class="text-button" @click="load(true)">重新加载</button>
-      </div>
+      <ContentTransition
+        :identity="`${mode}:${category}:${scene}:${busy ? 'loading' : 'ready'}`"
+      >
+        <EntityGrid
+          v-if="mode === 'lists'"
+          :items="lists"
+          @open="emit('open', $event)"
+        />
+        <TrackList v-else :tracks="tracks" @menu="emit('menu', $event)" />
+        <div v-if="empty" class="empty-inline">
+          <p v-if="emptyNotice">{{ emptyNotice }}</p>
+          <p>
+            {{
+              mode === 'lists'
+                ? '此分类暂时没有公开歌单'
+                : '此分类暂时没有可播放歌曲'
+            }}，可以换个标签或重新加载。
+          </p>
+          <button class="text-button" @click="load(true)">重新加载</button>
+        </div>
+      </ContentTransition>
     </section>
     <p v-if="busy" class="loading">正在加载音乐…</p>
     <div v-if="error" class="inline-error">

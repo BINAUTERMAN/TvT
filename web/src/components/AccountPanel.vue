@@ -5,6 +5,7 @@ import { native } from '../bridge';
 import { notify, library, refreshAccount, syncFavorites } from '../store';
 import { normalize } from '../music';
 import { vip, refreshVip } from '../vip';
+import ContentTransition from './ContentTransition.vue';
 const vipLabel = computed(() => vip.label);
 const loggedIn = ref(false);
 const name = ref('');
@@ -283,138 +284,146 @@ onUnmounted(() => {
 <template>
   <div class="account-panel">
     <h2>{{ loggedIn ? '我的账号' : '登录酷狗账号' }}</h2>
-    <template v-if="loggedIn">
-      <div class="account-summary">
-        <strong>{{ name }}</strong>
-        <span class="vip-badge">{{ vipLabel }}</span>
-      </div>
-      <button class="menu-item" :disabled="busy" @click="loadCloud">
-        读取云端歌单
-      </button>
-      <button
-        v-for="list in cloud"
-        :key="list.id"
-        class="menu-item"
-        :disabled="busy"
-        @click="importCloud(list)"
-      >
-        {{ list.name }}
-        <span class="muted">导入</span>
-      </button>
-      <button class="text-button danger" @click="logout">退出登录</button>
-    </template>
-    <template v-else-if="loginChoices.length">
-      <p class="muted">此手机号绑定了多个账号，选择你常用的账号继续登录。</p>
-      <div class="login-choices" aria-label="选择酷狗账号">
-        <button
-          v-for="(choice, index) in loginChoices"
-          :key="choice.key"
-          class="login-choice"
-          :disabled="loginBusy"
-          @click="chooseAccount(choice)"
-        >
-          <img v-if="choice.avatar" :src="choice.avatar" alt="" />
-          <span v-else class="choice-avatar">
-            {{ choice.name.slice(0, 1) }}
-          </span>
-          <strong>{{ choice.name }}</strong>
-          <span class="muted">账号 {{ index + 1 }}</span>
+    <ContentTransition
+      :identity="loggedIn ? 'profile' : loginChoices.length ? 'choices' : mode"
+    >
+      <template v-if="loggedIn">
+        <div class="account-summary">
+          <strong>{{ name }}</strong>
+          <span class="vip-badge">{{ vipLabel }}</span>
+        </div>
+        <button class="menu-item" :disabled="busy" @click="loadCloud">
+          读取云端歌单
         </button>
-      </div>
-      <p
-        class="login-message"
-        :class="{ 'login-error': failed }"
-        :role="failed ? 'alert' : 'status'"
-      >
-        {{ loginBusy ? '正在登录所选账号' : message }}
-      </p>
-      <button class="text-button" :disabled="loginBusy" @click="resetChoices">
-        重新输入手机号
-      </button>
-    </template>
-    <template v-else-if="mode === 'sms'">
-      <p class="muted">同步你的歌单与账号播放权限。</p>
-      <form class="login-form" @submit.prevent="loginMobile">
-        <label class="form-field">
-          手机号
-          <div class="input-line">
-            <span>+86</span>
-            <input
-              v-model="mobile"
-              type="tel"
-              inputmode="tel"
-              autocomplete="tel-national"
-              maxlength="11"
-              placeholder="输入手机号码"
-              aria-label="手机号码"
-              required
-            />
-          </div>
-        </label>
-        <label class="form-field">
-          短信验证码
-          <div class="input-line">
-            <input
-              v-model="code"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              maxlength="8"
-              placeholder="输入验证码"
-              aria-label="短信验证码"
-              required
-            />
-            <button
-              type="button"
-              class="text-button"
-              :disabled="!validMobile || sending || cooldown > 0"
-              @click="sendCode"
-            >
-              {{
-                sending
-                  ? '发送中'
-                  : cooldown
-                    ? `${cooldown} 秒后重发`
-                    : '获取验证码'
-              }}
-            </button>
-          </div>
-        </label>
+        <ContentTransition
+          :identity="busy ? 'loading' : cloud.length ? 'cloud' : 'empty'"
+        >
+          <p v-if="busy" class="muted" role="status">正在读取，请稍候…</p>
+          <button
+            v-for="list in cloud"
+            :key="list.id"
+            class="menu-item"
+            :disabled="busy"
+            @click="importCloud(list)"
+          >
+            {{ list.name }}
+            <span class="muted">导入</span>
+          </button>
+        </ContentTransition>
+        <button class="text-button danger" @click="logout">退出登录</button>
+      </template>
+      <template v-else-if="loginChoices.length">
+        <p class="muted">此手机号绑定了多个账号，选择你常用的账号继续登录。</p>
+        <div class="login-choices" aria-label="选择酷狗账号">
+          <button
+            v-for="(choice, index) in loginChoices"
+            :key="choice.key"
+            class="login-choice"
+            :disabled="loginBusy"
+            @click="chooseAccount(choice)"
+          >
+            <img v-if="choice.avatar" :src="choice.avatar" alt="" />
+            <span v-else class="choice-avatar">
+              {{ choice.name.slice(0, 1) }}
+            </span>
+            <strong>{{ choice.name }}</strong>
+            <span class="muted">账号 {{ index + 1 }}</span>
+          </button>
+        </div>
         <p
           class="login-message"
           :class="{ 'login-error': failed }"
           :role="failed ? 'alert' : 'status'"
         >
-          {{ message }}
+          {{ loginBusy ? '正在登录所选账号' : message }}
         </p>
-        <button
-          class="primary full-width"
-          :disabled="!validMobile || !validCode || loginBusy"
-        >
-          {{ loginBusy ? '正在登录' : '登录' }}
+        <button class="text-button" :disabled="loginBusy" @click="resetChoices">
+          重新输入手机号
         </button>
-      </form>
-      <p class="muted">
-        验证码由酷狗发送。手机号和验证码仅用于本次登录，不保存到资料库。
-      </p>
-    </template>
-    <template v-else>
-      <p class="muted">使用另一台设备上的酷狗 App 扫码。</p>
-      <img
-        v-if="qrImage"
-        class="login-qr"
-        :src="qrImage"
-        alt="酷狗登录二维码"
-      />
-      <p class="muted" role="status">{{ status }}</p>
-      <button class="primary" :disabled="busy" @click="createQr">
-        {{ busy ? '正在获取…' : qrImage ? '刷新二维码' : '获取登录二维码' }}
-      </button>
-    </template>
+      </template>
+      <template v-else-if="mode === 'sms'">
+        <p class="muted">同步你的歌单与账号播放权限。</p>
+        <form class="login-form" @submit.prevent="loginMobile">
+          <label class="form-field">
+            手机号
+            <div class="input-line">
+              <span>+86</span>
+              <input
+                v-model="mobile"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel-national"
+                maxlength="11"
+                placeholder="输入手机号码"
+                aria-label="手机号码"
+                required
+              />
+            </div>
+          </label>
+          <label class="form-field">
+            短信验证码
+            <div class="input-line">
+              <input
+                v-model="code"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="8"
+                placeholder="输入验证码"
+                aria-label="短信验证码"
+                required
+              />
+              <button
+                type="button"
+                class="text-button"
+                :disabled="!validMobile || sending || cooldown > 0"
+                @click="sendCode"
+              >
+                {{
+                  sending
+                    ? '发送中'
+                    : cooldown
+                      ? `${cooldown} 秒后重发`
+                      : '获取验证码'
+                }}
+              </button>
+            </div>
+          </label>
+          <p
+            class="login-message"
+            :class="{ 'login-error': failed }"
+            :role="failed ? 'alert' : 'status'"
+          >
+            {{ message }}
+          </p>
+          <button
+            class="primary full-width"
+            :disabled="!validMobile || !validCode || loginBusy"
+          >
+            {{ loginBusy ? '正在登录' : '登录' }}
+          </button>
+        </form>
+        <p class="muted">
+          验证码由酷狗发送。手机号和验证码仅用于本次登录，不保存到资料库。
+        </p>
+      </template>
+      <template v-else>
+        <p class="muted">使用另一台设备上的酷狗 App 扫码。</p>
+        <img
+          v-if="qrImage"
+          class="login-qr"
+          :src="qrImage"
+          alt="酷狗登录二维码"
+        />
+        <p class="muted" role="status">{{ status }}</p>
+        <button class="primary" :disabled="busy" @click="createQr">
+          {{ busy ? '正在获取…' : qrImage ? '刷新二维码' : '获取登录二维码' }}
+        </button>
+      </template>
+    </ContentTransition>
     <div v-if="!loggedIn" class="login-alternative">
       <button class="text-button" @click="changeMode">
         {{ mode === 'sms' ? '使用扫码登录' : '使用手机验证码登录' }}
       </button>
     </div>
-    <p v-if="busy && loggedIn" class="muted">正在读取，请稍候…</p>
   </div>
 </template>

@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import { native } from '../bridge';
 import LyricsRange from './LyricsRange.vue';
 import StatusBarLyricsPanel from './StatusBarLyricsPanel.vue';
 import LyricsPreview from './LyricsPreview.vue';
+import AnimatedDisclosure from './AnimatedDisclosure.vue';
+import OptionPicker from './OptionPicker.vue';
 import { preferences, updatePreference, notify } from '../store';
 
 const settings = reactive({
@@ -91,33 +93,6 @@ const presets = [
     secondaryColor: '#ead2df',
   },
 ] as const;
-const previewStyle = computed(() => ({
-  '--preview-font': `${settings.size}px`,
-  width: `${settings.width}%`,
-  color: settings.textColor,
-  backgroundColor: `${settings.backgroundColor}${Math.round(
-    settings.backgroundOpacity * 2.55,
-  )
-    .toString(16)
-    .padStart(2, '0')}`,
-  opacity: settings.opacity / 100,
-  fontSize: `${settings.size}px`,
-  fontWeight: settings.bold ? 700 : 400,
-  textAlign: settings.align as 'left' | 'center' | 'right',
-  gap: `${settings.lineSpacing}px`,
-  textShadow: settings.shadow ? `0 1px ${settings.shadow}px #000` : 'none',
-  WebkitTextStroke: `${settings.outline / 2}px #141418bd`,
-}));
-const highlightStyle = computed(() => ({
-  color: settings.highlightColor,
-  backgroundImage: settings.gradient
-    ? `linear-gradient(#ffffff88, #ffffff00), linear-gradient(${settings.highlightColor}, ${settings.highlightColor})`
-    : 'none',
-  backgroundClip: settings.gradient ? 'text' : 'border-box',
-  WebkitTextFillColor: settings.gradient
-    ? 'transparent'
-    : settings.highlightColor,
-}));
 function accept(value: Settings) {
   Object.assign(settings, value);
   preferences.floatingLyrics = value.enabled;
@@ -184,9 +159,6 @@ function changeToggle(
 ) {
   void update({ [key]: (event.target as HTMLInputElement).checked });
 }
-function changeSelect(event: Event, key: 'mode' | 'align') {
-  void update({ [key]: (event.target as HTMLSelectElement).value });
-}
 onMounted(() => {
   void load();
   window.addEventListener('ting:resume', load);
@@ -204,27 +176,7 @@ onUnmounted(() => {
     <header class="lyrics-settings-header">
       <h2>桌面歌词</h2>
     </header>
-    <LyricsPreview>
-      <div class="floating-preview" :style="previewStyle">
-        <strong>
-          <span :style="highlightStyle">让音乐</span>
-          在此刻流动
-        </strong>
-        <small
-          v-if="settings.mode !== 'single'"
-          :style="{
-            color: settings.secondaryColor,
-            fontSize: `${settings.mode === 'next' ? 100 : settings.secondarySize}%`,
-          }"
-        >
-          {{
-            settings.mode === 'next'
-              ? '下一句，陪你走过每个日常'
-              : 'Let the music flow in this moment'
-          }}
-        </small>
-      </div>
-    </LyricsPreview>
+    <LyricsPreview v-if="ready" :settings="settings" />
     <button v-if="failed" class="text-button" @click="load">
       重新读取设置
     </button>
@@ -240,15 +192,16 @@ onUnmounted(() => {
         </label>
         <label class="setting-row">
           <span>显示模式</span>
-          <select
-            aria-label="歌词显示模式"
-            :value="settings.mode"
-            @change="changeSelect($event, 'mode')"
-          >
-            <option value="single">单行原文</option>
-            <option value="translation">原文与译文</option>
-            <option value="next">双行交替</option>
-          </select>
+          <OptionPicker
+            label="歌词显示模式"
+            :model-value="settings.mode"
+            :options="[
+              { value: 'single', label: '单行原文' },
+              { value: 'translation', label: '原文与译文' },
+              { value: 'next', label: '双行交替' },
+            ]"
+            @update:model-value="update({ mode: $event })"
+          />
         </label>
       </div>
       <p
@@ -303,11 +256,7 @@ onUnmounted(() => {
           {{ preset.name }}
         </button>
       </div>
-      <details class="lyrics-details">
-        <summary>
-          文字与自定义配色
-          <span>对齐、字效与细节</span>
-        </summary>
+      <AnimatedDisclosure class="lyrics-details" title="文字与配色">
         <div class="lyrics-group">
           <div class="lyrics-colors">
             <label v-for="color in colors" :key="color.key" class="setting-row">
@@ -323,15 +272,16 @@ onUnmounted(() => {
           </div>
           <label class="setting-row">
             <span>文字对齐</span>
-            <select
-              aria-label="歌词文字对齐"
-              :value="settings.align"
-              @change="changeSelect($event, 'align')"
-            >
-              <option value="left">居左</option>
-              <option value="center">居中</option>
-              <option value="right">居右</option>
-            </select>
+            <OptionPicker
+              label="歌词文字对齐"
+              :model-value="settings.align"
+              :options="[
+                { value: 'left', label: '居左' },
+                { value: 'center', label: '居中' },
+                { value: 'right', label: '居右' },
+              ]"
+              @update:model-value="update({ align: $event })"
+            />
           </label>
           <label
             v-for="toggle in [
@@ -378,7 +328,7 @@ onUnmounted(() => {
             />
           </div>
         </div>
-      </details>
+      </AnimatedDisclosure>
       <h3>位置与操作</h3>
       <div class="lyrics-group">
         <label class="setting-row">
@@ -418,9 +368,6 @@ onUnmounted(() => {
           />
         </div>
       </div>
-      <p class="lyrics-footnote">
-        点按歌词展开或收起控制，拖动调整位置。横竖屏分别记忆；锁定后可从播放通知解锁。
-      </p>
       <div class="lyrics-actions">
         <button @click="update({ resetPosition: true })">重置横竖屏位置</button>
         <button @click="resetConfirm = true">恢复默认参数</button>
@@ -440,16 +387,12 @@ onUnmounted(() => {
         </div>
       </div>
     </fieldset>
-    <details class="lyrics-details status-details">
-      <summary>
-        状态栏歌词
-        <span>小号单行歌词与位置</span>
-      </summary>
+    <AnimatedDisclosure
+      class="lyrics-details status-details"
+      title="状态栏歌词"
+    >
       <StatusBarLyricsPanel />
-    </details>
-    <p class="lyrics-footnote">
-      预览展示静态外观；实际字号随系统缩放。点按滑条轨道不会修改参数。
-    </p>
+    </AnimatedDisclosure>
   </section>
 </template>
 <style scoped>
@@ -494,33 +437,6 @@ h3 {
 }
 .setting-row input[type='checkbox']:checked::after {
   background: #fff;
-}
-.setting-row select {
-  max-width: 55%;
-  min-height: 40px;
-  padding: 8px;
-  background: transparent;
-  font-size: 13px;
-  color: var(--muted);
-}
-.floating-preview {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  margin: 0;
-  box-shadow: none;
-  padding: 10px;
-  box-sizing: border-box;
-  border-radius: 14px;
-  overflow-wrap: anywhere;
-}
-.floating-preview strong {
-  font-size: inherit;
-  font-weight: inherit;
-  line-height: 1.35;
-}
-.floating-preview small {
-  line-height: 1.4;
 }
 .lyrics-slider-row {
   padding: 14px 0 6px;
@@ -580,7 +496,7 @@ h3 {
   border-radius: 18px;
   background: var(--surface);
 }
-.lyrics-details summary {
+.lyrics-details :deep(summary) {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -591,22 +507,18 @@ h3 {
   font-size: 14px;
   list-style: none;
 }
-.lyrics-details summary::-webkit-details-marker {
+.lyrics-details :deep(summary::-webkit-details-marker) {
   display: none;
 }
-.lyrics-details summary > span {
-  flex: 1;
-  text-align: right;
-  color: var(--muted);
-  font-size: 10px;
-}
-.lyrics-details summary::after {
+.lyrics-details :deep(summary::after) {
   content: '›';
   color: var(--muted);
   font-size: 22px;
   transform: rotate(0);
+  margin-left: auto;
+  transition: transform var(--motion-duration) var(--motion-ease);
 }
-.lyrics-details[open] > summary::after {
+.lyrics-details[data-expanded='true'] :deep(summary::after) {
   transform: rotate(90deg);
 }
 .lyrics-colors {

@@ -29,6 +29,7 @@ import {
 } from '../store';
 import type { LyricLine, Track, LyricDocument } from '../types';
 import Artwork from './Artwork.vue';
+import ContentTransition from './ContentTransition.vue';
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{
   close: [];
@@ -175,66 +176,71 @@ watch(
         </button>
       </header>
       <div class="player-layout">
-        <div v-if="!lyricsOpen" class="cover-stage">
-          <div
-            class="listening-orbit"
-            :style="{
-              '--progress': `${player.duration ? (player.position / player.duration) * 360 : 0}deg`,
-            }"
-            aria-hidden="true"
-          />
-          <button
-            class="player-art"
-            aria-label="展开歌词，左右滑动切歌，下滑收起"
-            :style="{
-              transform: `translate(${drag.x * 0.4}px,${drag.y * 0.5}px) rotate(${drag.x * 0.025}deg)`,
-            }"
-            @pointerdown="dragStart"
-            @pointermove="dragMove"
-            @pointerup="dragEnd"
-            @pointercancel="dragEnd"
-            @click="revealLyrics"
-          >
-            <Artwork
-              :key="current.id"
-              :src="current.cover"
-              :seed="current.title"
+        <ContentTransition
+          :identity="lyricsOpen ? 'lyrics' : 'cover'"
+          class="player-visual"
+        >
+          <div v-if="!lyricsOpen" class="cover-stage">
+            <div
+              class="listening-orbit"
+              :style="{
+                '--progress': `${player.duration ? (player.position / player.duration) * 360 : 0}deg`,
+              }"
+              aria-hidden="true"
             />
-          </button>
-          <Transition name="lyric-caption" mode="out-in">
-            <p :key="activeLyric" class="lyric-caption">
-              {{ lyrics[activeLyric]?.text || '让旋律，留在此刻' }}
-            </p>
-          </Transition>
-        </div>
-        <div v-if="lyricsOpen" class="lyrics">
-          <p v-if="!lyrics.length" class="muted">{{ lyricStatus }}</p>
-          <p
-            v-else-if="
-              translationRequested &&
-              preferences.lyricsTranslation &&
-              !translationAvailable
-            "
-            class="lyric-translation-status"
-          >
-            平台暂未提供这首歌的译文
-          </p>
-          <button
-            v-for="(line, index) in lyrics"
-            :key="index"
-            class="lyric-line"
-            :class="{ active: index === activeLyric }"
-            @click="command('seek', { position: line.time })"
-          >
-            <span>{{ line.text }}</span>
-            <small
-              v-if="preferences.lyricsTranslation && line.translation"
-              class="lyric-translation"
+            <button
+              class="player-art"
+              aria-label="展开歌词，左右滑动切歌，下滑收起"
+              :style="{
+                transform: `translate(${drag.x * 0.4}px,${drag.y * 0.5}px) rotate(${drag.x * 0.025}deg)`,
+              }"
+              @pointerdown="dragStart"
+              @pointermove="dragMove"
+              @pointerup="dragEnd"
+              @pointercancel="dragEnd"
+              @click="revealLyrics"
             >
-              {{ line.translation }}
-            </small>
-          </button>
-        </div>
+              <Artwork
+                :key="current.id"
+                :src="current.cover"
+                :seed="current.title"
+              />
+            </button>
+            <Transition name="lyric-caption" mode="out-in">
+              <p :key="activeLyric" class="lyric-caption">
+                {{ lyrics[activeLyric]?.text || '让旋律，留在此刻' }}
+              </p>
+            </Transition>
+          </div>
+          <div v-else class="lyrics">
+            <p v-if="!lyrics.length" class="muted">{{ lyricStatus }}</p>
+            <p
+              v-else-if="
+                translationRequested &&
+                preferences.lyricsTranslation &&
+                !translationAvailable
+              "
+              class="lyric-translation-status"
+            >
+              平台暂未提供这首歌的译文
+            </p>
+            <button
+              v-for="(line, index) in lyrics"
+              :key="index"
+              class="lyric-line"
+              :class="{ active: index === activeLyric }"
+              @click="command('seek', { position: line.time })"
+            >
+              <span>{{ line.text }}</span>
+              <small
+                v-if="preferences.lyricsTranslation && line.translation"
+                class="lyric-translation"
+              >
+                {{ line.translation }}
+              </small>
+            </button>
+          </div>
+        </ContentTransition>
         <div class="player-controls">
           <div class="now-title">
             <div>
@@ -251,10 +257,14 @@ watch(
               <Heart :size="25" :fill="liked ? 'currentColor' : 'none'" />
             </button>
           </div>
-          <p v-if="player.loading" class="muted">正在加载音频…</p>
-          <p v-else-if="player.interrupted" class="interruption-note">
-            已为其他声音暂停，结束后自动继续
-          </p>
+          <div class="playback-status" role="status" aria-live="polite">
+            <Transition name="status" mode="out-in">
+              <span v-if="player.loading" key="loading">正在加载音频…</span>
+              <span v-else-if="player.interrupted" key="interrupted">
+                已为其他声音暂停，结束后自动继续
+              </span>
+            </Transition>
+          </div>
           <input
             class="seek"
             type="range"

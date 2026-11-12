@@ -20,13 +20,19 @@ final class AppUpdater {
   private final Context context;
   private final SharedPreferences saved;
   private final String repository;
+  private final UpdateSource gitee;
+  private final UpdateSource github;
+  private final String sourceKey;
   private final long interval;
 
   AppUpdater(Context context) throws Exception {
     this.context = context;
     saved = context.getSharedPreferences("updates", Context.MODE_PRIVATE);
     JSONObject config = new JSONObject(read(context.getAssets().open("update.json"), 8192));
-    repository = config.optString("repository");
+    github = new UpdateSource("github", config.optString("repository"));
+    gitee = new UpdateSource("gitee", config.optString("giteeRepository"));
+    repository = config.optString("projectRepository", github.repository);
+    sourceKey = gitee.repository + "|" + github.repository;
     interval = Math.max(1, config.optInt("checkIntervalHours", 6)) * 3600000L;
   }
 
@@ -42,88 +48,60 @@ final class AppUpdater {
         .put("dontWarn", saved.getBoolean("dontWarn", false))
         .put("configured", configured())
         .put("repository", repository)
+        .put("source", gitee.configured() ? "gitee" : "github")
         .put(
             "currentVersion",
             context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
   }
 
   private boolean configured() {
-    return repository.matches("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+");
+    return gitee.configured() || github.configured();
   }
 
   synchronized JSONObject check(boolean manual) throws Exception {
     if (!configured()) return new JSONObject().put("configured", false);
     if (!manual && !saved.getBoolean("enabled", true)) return new JSONObject().put("skipped", true);
-    JSONObject release;
-    if (!manual && System.currentTimeMillis() - saved.getLong("checked", 0) < interval) {
-      String cached = saved.getString("candidate", "");
-      if (cached.isEmpty()) return new JSONObject().put("skipped", true);
-      JSONObject result = new JSONObject(cached);
-      return result
-          .put("ignored", saved.getLong("skip", 0) == result.optLong("versionCode"))
-          .put(
-              "available",
-              result.optLong("versionCode")
-                  > version(
-                      context.getPackageManager().getPackageInfo(context.getPackageName(), 0)));
-    } else {
-      release = fetch("https://api.github.com/repos/" + repository + "/releases/latest");
-      if (release.optBoolean("draft") || release.optBoolean("prerelease"))
-        throw new Exception("暂无稳定发行版");
-      saved
-          .edit()
-          .putLong("checked", System.currentTimeMillis())
-          .putString("release", release.toString())
-          .apply();
-    }
-    JSONArray assets = release.optJSONArray("assets");
-    JSONObject manifestAsset = null;
-    if (assets != null)
-      for (int index = 0; index < assets.length(); index++) {
-        JSONObject asset = assets.getJSONObject(index);
-        if (asset.optString("name").equals("update-manifest.json")) manifestAsset = asset;
-      }
-    if (manifestAsset == null) throw new Exception("该发行版尚未提供更新清单");
-    String manifestUrl = manifestAsset.optString("browser_download_url");
-    validateDownloadUrl(manifestUrl);
-    JSONObject manifest = fetch(manifestUrl);
-    String file = manifest.optString("file"), sha = manifest.optString("sha256");
-    long code = manifest.optLong("versionCode");
-    JSONObject apk = null;
-    if (assets != null)
-      for (int index = 0; index < assets.length(); index++) {
-        JSONObject asset = assets.getJSONObject(index);
-        if (asset.optString("name").equals(file) && file.endsWith(".apk")) apk = asset;
-      }
-    if (apk == null || !sha.matches("[a-fA-F0-9]{64}") || code < 1)
-      throw new Exception("更新清单不完整，无法验证安装包");
-    String url = apk.getString("browser_download_url");
-    validateDownloadUrl(url);
     long current = version(context.getPackageManager().getPackageInfo(context.getPackageName(), 0));
-    JSONObject result =
-        new JSONObject()
-            .put("configured", true)
-            .put("available", code > current)
-            .put("ignored", !manual && saved.getLong("skip", 0) == code)
-            .put("versionCode", code)
-            .put("version", manifest.optString("versionName", release.optString("tag_name")))
-            .put("name", release.optString("name"))
-            .put("notes", release.optString("body"))
-            .put("publishedAt", release.optString("published_at"))
-            .put("url", url)
-            .put("sha256", sha.toLowerCase(java.util.Locale.ROOT))
-            .put("size", apk.optLong("size"))
-            .put("rollback", manifest.optBoolean("rollback"));
-    saved.edit().putString("candidate", result.toString()).apply();
-    return result;
+    if (!manual && sourceKey.equals(saved.getString("sourceKey", ""))
+        && System.currentTimeMillis() - saved.getLong("checked", 0) < interval) {
+      String cached = saved.getString("candidate", "");
+      if (!cached.isEmpty()) {
+        JSONObject result = new JSONObject(cached);
+        return result.put("available", result.optLong("versionCode") > current)
+            .put("ignored", saved.getLong("skip", 0) == result.optLong("versionCode"));
+      }
+    }
+    StringBuilder errors = new StringBuilder();
+    for (UpdateSource source : new UpdateSource[] {gitee, github}) {
+      if (!source.configured()) continue;
+      try {
+        JSONObject release = fetch(source.latestUrl(), source);
+        JSONObject manifest = fetch(source.manifestUrl(release), source);
+        JSONObject result = source.candidate(release, manifest, current);
+        if (source == gitee && github.configured())
+          result.put("fallbackUrl", github.downloadUrl(result.getString("tag"), result.getString("file")));
+        result.put("ignored", !manual && saved.getLong("skip", 0) == result.optLong("versionCode"));
+        saved.edit().putLong("checked", System.currentTimeMillis()).putString("sourceKey", sourceKey)
+            .putString("candidate", result.toString()).apply();
+        return result;
+      } catch (Exception unavailable) {
+        if (errors.length() > 0) errors.append("；");
+        errors.append(source.name()).append("：").append(unavailable.getMessage());
+      }
+    }
+    throw new Exception("检查更新失败（" + errors + "）");
   }
 
   synchronized JSONObject download() throws Exception {
     JSONObject candidate = new JSONObject(saved.getString("candidate", "{}"));
     if (!candidate.optBoolean("available")) throw new Exception("请先检查可用更新");
-    JSONObject state = status();
+    JSONObject state = downloadState();
     if (state.optString("state").equals("downloading")) return state;
-    String url = candidate.getString("url");
+    return enqueue(candidate, false);
+  }
+
+  private JSONObject enqueue(JSONObject candidate, boolean fallback) throws Exception {
+    String url = candidate.getString(fallback ? "fallbackUrl" : "url");
     validateDownloadUrl(url);
     File file = apkFile();
     if (file.exists() && !file.delete()) throw new Exception("旧安装包清理失败");
@@ -131,7 +109,7 @@ final class AppUpdater {
         new DownloadManager.Request(Uri.parse(url))
             .setTitle("TvT " + candidate.optString("version"))
             .setDescription("正在下载更新，完成后请返回TvT安装")
-            .setMimeType("application/octet-stream")
+            .setMimeType("application/vnd.android.package-archive")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationInExternalFilesDir(
                 context, Environment.DIRECTORY_DOWNLOADS, "ting-update.apk");
@@ -141,11 +119,28 @@ final class AppUpdater {
         .edit()
         .putLong("downloadId", id)
         .putString("downloadCandidate", candidate.toString())
+        .putBoolean("downloadFallback", fallback)
         .apply();
     return new JSONObject().put("state", "downloading");
   }
 
-  JSONObject status() throws Exception {
+  synchronized JSONObject status() throws Exception {
+    JSONObject state = downloadState();
+    JSONObject candidate = new JSONObject(saved.getString("downloadCandidate", "{}"));
+    int reason = state.optInt("reason");
+    boolean remoteFailure = (reason >= 400 && reason <= 599)
+        || reason == DownloadManager.ERROR_HTTP_DATA_ERROR
+        || reason == DownloadManager.ERROR_UNHANDLED_HTTP_CODE
+        || reason == DownloadManager.ERROR_TOO_MANY_REDIRECTS
+        || reason == DownloadManager.ERROR_CANNOT_RESUME;
+    // 同一清单与摘要下只切换一次备用附件，不启动后台轮询。
+    if (state.optString("state").equals("failed") && remoteFailure
+        && !saved.getBoolean("downloadFallback", false) && candidate.has("fallbackUrl"))
+      return enqueue(candidate, true);
+    return state;
+  }
+
+  private JSONObject downloadState() throws Exception {
     long id = saved.getLong("downloadId", 0);
     if (id == 0) return new JSONObject().put("state", "idle");
     try (Cursor cursor =
@@ -154,6 +149,7 @@ final class AppUpdater {
       if (cursor == null || !cursor.moveToFirst()) return new JSONObject().put("state", "idle");
       int status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
       return new JSONObject()
+          .put("reason", cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)))
           .put(
               "state",
               status == DownloadManager.STATUS_SUCCESSFUL
@@ -203,7 +199,7 @@ final class AppUpdater {
   }
 
   Intent releases() throws Exception {
-    if (!configured()) throw new Exception("此构建尚未配置更新仓库");
+    if (!repository.matches("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")) throw new Exception("此构建尚未配置项目仓库");
     return new Intent(
         Intent.ACTION_VIEW, Uri.parse("https://github.com/" + repository + "/releases"));
   }
@@ -228,26 +224,28 @@ final class AppUpdater {
   }
 
   private void validateDownloadUrl(String address) throws Exception {
-    URL url = new URL(address);
-    if (!url.getProtocol().equals("https")
-        || !url.getHost().equals("github.com")
-        || !url.getPath().startsWith("/" + repository + "/releases/download/"))
-      throw new Exception("更新地址不属于配置的 GitHub 仓库");
+    String host = new URL(address).getHost();
+    if (host.equals("gitee.com")) gitee.validateDownloadUrl(address);
+    else if (host.equals("github.com")) github.validateDownloadUrl(address);
+    else throw new Exception("更新地址不属于配置的发行仓库");
   }
 
-  private JSONObject fetch(String address) throws Exception {
+  private JSONObject fetch(String address, UpdateSource source) throws Exception {
     HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
     connection.setConnectTimeout(12000);
     connection.setReadTimeout(20000);
-    connection.setRequestProperty("Accept", "application/vnd.github+json");
-    connection.setRequestProperty("User-Agent", "Ting-Music-Android");
+    connection.setRequestProperty("Accept", "application/json");
+    connection.setRequestProperty("User-Agent", "TvT-Android");
     try {
       int code = connection.getResponseCode();
-      if (code == 404) throw new Exception("暂无公开发行版");
-      if (code == 403 || code == 429) throw new Exception("GitHub 请求受限，请稍后再试");
-      if (code != 200) throw new Exception("更新服务暂不可用");
+      if (code == 404) throw new Exception("暂无公开发行版或更新文件");
+      if (code == 401 || code == 403 || code == 429)
+        throw new Exception(source.name() + "访问受限，请确认仓库公开且附件可匿名下载");
+      if (code != 200) throw new Exception("更新服务返回 HTTP " + code);
       try (InputStream input = connection.getInputStream()) {
-        return new JSONObject(read(input, 2 * 1024 * 1024));
+        String body = read(input, 2 * 1024 * 1024);
+        if (!body.trim().startsWith("{")) throw new Exception("未返回更新数据，可能需要登录或验证");
+        return new JSONObject(body);
       }
     } finally {
       connection.disconnect();

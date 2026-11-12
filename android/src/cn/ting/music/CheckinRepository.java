@@ -22,6 +22,7 @@ final class CheckinRepository {
   /** 平台返回的"今日次数已用光"。 */
   static final int CODE_EXHAUSTED = 30002;
   private static final long MANUAL_GAP = 5000L;
+  private static final long PROBE_RETRY_GAP = 15 * 60 * 1000L;
   private static final long AD_ID = 12307537187L;
   private static final long AD_PLAY_MS = 30000L;
   private static final Object LOCK = new Object();
@@ -41,6 +42,10 @@ final class CheckinRepository {
   static boolean probePassed(JSONObject response) {
     return response != null
         && response.optInt("error_code", response.optInt("errcode", -1)) == CODE_LOGGED_OUT;
+  }
+
+  static boolean shouldRetryProbe(boolean checked, boolean ok, long checkedAt, long now) {
+    return checked && !ok && now - checkedAt >= PROBE_RETRY_GAP;
   }
 
   /** 领取响应分类：0 成功，1 今日次数用光，2 登录失效，3 其他失败。 */
@@ -129,6 +134,17 @@ final class CheckinRepository {
       state = describe(owner, "reward", today);
       if (!manual && !state.optBoolean("auto"))
         return state.put("message", "已在设置中关闭启动自动签到");
+      JSONObject previousProbe = state.optJSONObject("probe");
+      // 仅随前台签到入口重试，不另设轮询；已有到账记录时保持当日领取口径。
+      if ("listen".equals(state.optString("mode"))
+          && state.optInt("claims") == 0
+          && !today.equals(preferences.getString("vipConfirmedDay:" + owner, ""))
+          && previousProbe != null
+          && shouldRetryProbe(previousProbe.optBoolean("checked"), previousProbe.optBoolean("ok"),
+              previousProbe.optLong("checkedAt"), System.currentTimeMillis())) {
+        probeNow();
+        state = describe(owner, "reward", today);
+      }
       if ("listen".equals(state.optString("mode"))) return listenClaim(owner, today, manual);
       int claims = state.optInt("claims");
       if (claims == 0 && today.equals(preferences.getString("vipConfirmedDay:" + owner, ""))) {
