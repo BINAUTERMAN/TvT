@@ -18,6 +18,10 @@ public final class PlaybackService extends Service {
   }
 
   public Observer observer;
+  public interface FmLevelObserver { void changed(float[] levels); }
+  public FmLevelObserver fmLevelObserver;
+  private FmVisualizer fmVisualizer;
+  private boolean fmVisualizerWanted;
 
   public final class LocalBinder extends Binder {
     public PlaybackService service() {
@@ -29,6 +33,9 @@ public final class PlaybackService extends Service {
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final ExecutorService network = Executors.newSingleThreadExecutor();
   private final ExecutorService favoriteWork = Executors.newSingleThreadExecutor();
+  private final ExecutorService fmNetwork = new ThreadPoolExecutor(
+      0, 1, 15, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+  private final PersonalFmSession fm = new PersonalFmSession();
   private MediaPlayer media;
   private VolumeShaper envelope;
   private boolean fadingOut;
@@ -113,6 +120,10 @@ public final class PlaybackService extends Service {
     instance = this;
     notificationIcon = NotificationIcons.status(this);
     api = new KugouApi(this);
+    fmVisualizer = new FmVisualizer(this, levels -> handler.post(() -> {
+      if (fmLevelObserver != null && fmVisualizerWanted && fm.active && isPlaying())
+        fmLevelObserver.changed(levels);
+    }));
     playbackSession = getSharedPreferences("playback", MODE_PRIVATE).getString("starSession", "");
     if (playbackSession.isEmpty()) newPlaybackSession();
     playbackBuffer = new PlaybackBuffer(this, api);
@@ -213,6 +224,12 @@ public final class PlaybackService extends Service {
       mode = saved.getInt("mode", 0);
       quality = saved.getString("quality", "128");
       resumePosition = saved.getInt("position", 0);
+      long user = api.accountUserId();
+      if (saved.getBoolean("personalFm", false) && user > 0
+          && user == saved.getLong("personalFmOwner", 0) && queue.length() > 0) {
+        fm.restore(user, queue);
+        mode = 0;
+      }
     } catch (JSONException ignored) {
       queue = new JSONArray();
     }
@@ -239,6 +256,9 @@ public final class PlaybackService extends Service {
           .put("favoritePending", favoritePending)
           .put("quality", resolvedQuality)
           .put("interrupted", resumeAfterFocus);
+      state.put("personalFm", fm.active).put("fmStarting", fm.starting)
+          .put("fmBusy", fm.pending).put("fmWaiting", fm.waiting)
+          .put("fmError", fm.error);
     } catch (Exception ignored) {
     }
     return state;
@@ -254,6 +274,44 @@ public final class PlaybackService extends Service {
 
   public void execute(String action, JSONObject data) throws Exception {
     switch (action) {
+      case "fmStart":
+        startPersonalFm();
+        break;
+      case "fmVisualize":
+        fmVisualizerWanted = data.optBoolean("enabled");
+        updateFmVisualizer();
+        break;
+      case "fmRetry":
+        if (!fm.active) startPersonalFm();
+        else {
+          requireFmAccount();
+          fm.waiting = fm.exhausted;
+          requestPersonalFm("play");
+        }
+        break;
+      case "fmDislike":
+        requireFmAccount();
+        if (!fm.active || track() == null || !track().optString("id").equals(data.optString("id")))
+          throw new Exception("歌曲已变化，请重试");
+        if (fm.pending) throw new Exception("正在获取推荐，请稍候");
+        fm.disliking = true;
+        requestPersonalFm("garbage");
+        break;
+      case "fmStop":
+        fm.stop();
+        emit();
+        break;
+      case "accountChanged":
+        if ((fm.active || fm.starting) && fm.owner != api.accountUserId()) {
+          pause();
+          fm.stop();
+          queue = new JSONArray();
+          index = 0;
+          releaseMedia();
+          showNotification();
+          emit();
+        }
+        break;
       case "favorite":
         toggleCloudFavorite();
         break;
@@ -291,6 +349,7 @@ public final class PlaybackService extends Service {
         resumePosition = 0;
         JSONArray tracks = data.getJSONArray("tracks");
         if (tracks.length() == 0 || tracks.length() > 3000) throw new Exception("播放队列为空或过大");
+        fm.stop();
         queue = tracks;
         index = Math.max(0, Math.min(data.optInt("index"), queue.length() - 1));
         newPlaybackSession();
@@ -310,15 +369,19 @@ public final class PlaybackService extends Service {
         seek(data.optDouble("position"));
         break;
       case "mode":
+        if (fm.active) throw new Exception("随心听按推荐顺序播放，退出后可切换模式");
         mode = Math.max(0, Math.min(2, data.optInt("mode")));
         emit();
         break;
       case "jump":
+        fm.cancel();
+        fm.exhausted = false;
         index = Math.max(0, Math.min(data.optInt("index"), queue.length() - 1));
         newPlaybackSession();
         load();
         break;
       case "enqueue":
+        if (fm.starting) fm.cancel();
         queue.put(data.getJSONObject("track"));
         emit();
         break;
@@ -371,22 +434,171 @@ public final class PlaybackService extends Service {
         .putString("queue", queue.toString())
         .putInt("index", index)
         .putInt("mode", mode)
+        .putBoolean("personalFm", fm.active)
+        .putLong("personalFmOwner", fm.owner)
         .apply();
     refreshBuffer();
   }
 
   private void remove(int target) {
     if (target < 0 || target >= queue.length()) return;
+    fm.cancel();
+    fm.exhausted = false;
     queue.remove(target);
     if (queue.length() == 0) {
       pause();
       releaseMedia();
       index = 0;
+      fm.stop();
     } else if (target == index) {
       index = Math.min(index, queue.length() - 1);
       newPlaybackSession();
       load();
     } else if (target < index) index--;
+    emit();
+  }
+
+  private void requireFmAccount() throws Exception {
+    long user = api.accountUserId();
+    if (user <= 0) throw new Exception("请先登录酷狗账号，再开启随心听");
+    if ((fm.active || fm.starting) && fm.owner != user) {
+      pause();
+      fm.stop();
+      persistQueue();
+      emit();
+      throw new Exception("账号已变化，请重新开启随心听");
+    }
+  }
+
+  private void startPersonalFm() throws Exception {
+    requireFmAccount();
+    if (fm.pending) return;
+    if (fm.active && queue.length() > 0) {
+      if (!isPlaying()) toggleToPlay();
+      return;
+    }
+    pause();
+    fm.start(api.accountUserId());
+    requestPersonalFm("login");
+  }
+
+  private void persistQueue() {
+    getSharedPreferences("playback", MODE_PRIVATE).edit()
+        .putString("queue", queue.toString()).putInt("index", index).putInt("mode", mode)
+        .putBoolean("personalFm", fm.active).putLong("personalFmOwner", fm.owner).apply();
+  }
+
+  private void replenishPersonalFm() {
+    if (fm.active && isPlaying() && queue.length() - index - 1 <= 2
+        && !fm.pending && fm.error.isEmpty()) requestPersonalFm("play");
+  }
+
+  private void requestPersonalFm(String action) {
+    if (destroyed || fm.pending || (!fm.active && !fm.starting)) return;
+    if (api.accountUserId() != fm.owner) {
+      fm.stop();
+      persistQueue();
+      emit();
+      return;
+    }
+    final boolean initial = fm.starting;
+    final long owner = fm.owner;
+    final int ticket = fm.begin();
+    final JSONObject source;
+    try {
+      source = initial ? null : fm.requestTrack(track());
+    } catch (Exception exception) {
+      fm.pending = false;
+      fm.starting = false;
+      fm.disliking = false;
+      fm.error = "随心听歌曲信息异常，请重新开启";
+      emit();
+      return;
+    }
+    final int remaining = initial ? 0 : Math.max(0, queue.length() - index - 1);
+    if (fm.waiting) {
+      playbackBuffer.stop();
+      releaseMedia();
+      audio.abandonAudioFocusRequest(focus);
+      loading = false;
+      handler.removeCallbacks(periodicCheckpoint);
+      handler.removeCallbacks(lyricTick);
+      showNotification();
+    }
+    emit();
+    fmNetwork.execute(() -> {
+      if (!fm.accepts(ticket, owner) || api.accountUserId() != owner) return;
+      try {
+        PersonalFmApi client = new PersonalFmApi(api);
+        JSONArray songs = client.songs(client.request(action, source, remaining, owner), action.equals("garbage"));
+        handler.post(() -> {
+          if (destroyed || !fm.accepts(ticket, owner)) return;
+          if (api.accountUserId() != owner) {
+            fm.stop();
+            persistQueue();
+            emit();
+            return;
+          }
+          boolean advance = fm.waiting || fm.disliking;
+          fm.pending = false;
+          fm.disliking = false;
+          try {
+            JSONArray accepted = fm.filter(songs);
+            if (initial) {
+              if (accepted.length() == 0) throw new Exception("平台暂未推荐新歌曲，请稍后重试");
+              fm.starting = false;
+              fm.active = true;
+              queue = accepted;
+              index = 0;
+              mode = 0;
+              resumePosition = 0;
+              newPlaybackSession();
+              persistQueue();
+              load();
+            } else {
+              // 仅保留最近二十首和待播放歌曲，后台续曲不累积整晚的队列。
+              while (index > 20) { queue.remove(0); index--; }
+              for (int position = 0; position < accepted.length(); position++)
+                queue.put(accepted.getJSONObject(position));
+              if (accepted.length() == 0 && (!action.equals("garbage") || index >= queue.length() - 1))
+                throw new Exception("平台暂未推荐新歌曲，请稍后重试");
+              fm.waiting = false;
+              fm.exhausted = false;
+              persistQueue();
+              if (advance) next(false);
+              else emit();
+              refreshBuffer();
+            }
+          } catch (Exception exception) {
+            personalFmFailed(exception);
+          }
+        });
+      } catch (Exception exception) {
+        handler.post(() -> {
+          if (!destroyed && fm.accepts(ticket, owner)) personalFmFailed(exception);
+        });
+      }
+    });
+  }
+
+  private void personalFmFailed(Exception exception) {
+    fm.pending = false;
+    fm.starting = false;
+    fm.disliking = false;
+    if (exception instanceof java.net.UnknownHostException || exception instanceof java.net.ConnectException)
+      fm.error = "网络连接失败，请检查网络后重试";
+    else if (exception instanceof java.net.SocketTimeoutException)
+      fm.error = "随心听响应超时，请稍后重试";
+    else if (exception instanceof org.json.JSONException)
+      fm.error = "平台返回的随心听数据异常，请稍后重试";
+    else if (exception instanceof javax.net.ssl.SSLException)
+      fm.error = "随心听安全连接失败，请稍后重试";
+    else fm.error = exception.getMessage() == null ? "随心听暂不可用，请稍后重试" : exception.getMessage();
+    if (fm.waiting) {
+      releaseMedia();
+      audio.abandonAudioFocusRequest(focus);
+      showNotification();
+    }
     emit();
   }
 
@@ -479,6 +691,7 @@ public final class PlaybackService extends Service {
                     media.setOnInfoListener(
                         (player, what, extra) -> {
                           if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
+                            fmVisualizer.close();
                             playbackBuffer.stop();
                             lyricBuffering = true;
                             floatingLyrics.stopAnimation();
@@ -486,6 +699,7 @@ public final class PlaybackService extends Service {
                             lyricBuffering = false;
                             updateFloatingLyrics();
                             refreshBuffer();
+                            updateFmVisualizer();
                           }
                           return false;
                         });
@@ -512,10 +726,12 @@ public final class PlaybackService extends Service {
                           showNotification();
                           emit();
                           refreshBuffer();
+                          replenishPersonalFm();
                         });
                     media.setOnCompletionListener(
                         player -> {
-                          if (mode == 1) {
+                          if (fm.active) next(false);
+                          else if (mode == 1) {
                             player.seekTo(0);
                             player.start();
                             emit();
@@ -543,6 +759,7 @@ public final class PlaybackService extends Service {
   }
 
   private void fail(String message) {
+    fm.cancel();
     playbackBuffer.stop();
     cancelInterruption();
     loading = false;
@@ -556,6 +773,11 @@ public final class PlaybackService extends Service {
 
   private void toggleToPlay() {
     cancelInterruption();
+    if (fm.active && fm.exhausted) {
+      fm.waiting = true;
+      requestPersonalFm("play");
+      return;
+    }
     if (loading) return;
     if (!prepared) {
       load();
@@ -575,10 +797,12 @@ public final class PlaybackService extends Service {
       showNotification();
       emit();
       refreshBuffer();
+      replenishPersonalFm();
     }
   }
 
   private void pause() {
+    fm.cancel();
     playbackBuffer.stop();
     cancelInterruption();
     if (loading) {
@@ -604,12 +828,40 @@ public final class PlaybackService extends Service {
   }
 
   private void next(boolean previous) {
+    if (fm.disliking) fm.cancel();
     resumePosition = 0;
     if (queue.length() == 0) return;
     if (previous && prepared && media.getCurrentPosition() > 3000) {
       seek(0);
       return;
     }
+    if (fm.active && !previous) {
+      if (index >= queue.length() - 1) {
+        fm.waiting = true;
+        fm.exhausted = true;
+        playbackBuffer.stop();
+        generation++;
+        releaseMedia();
+        loading = false;
+        audio.abandonAudioFocusRequest(focus);
+        handler.removeCallbacks(periodicCheckpoint);
+        handler.removeCallbacks(lyricTick);
+        if (fm.error.isEmpty()) requestPersonalFm("play");
+        showNotification();
+        emit();
+        return;
+      }
+      fm.exhausted = false;
+      fm.waiting = false;
+      index++;
+      newPlaybackSession();
+      load();
+      persistQueue();
+      return;
+    }
+    if (fm.active && previous && index == 0) { seek(0); return; }
+    fm.exhausted = false;
+    fm.waiting = false;
     if (mode == 2 && queue.length() > 1) {
       int planned = playbackBuffer.nextIndex(queue, index, mode);
       index =
@@ -635,6 +887,12 @@ public final class PlaybackService extends Service {
       if (prepared) fadeVolume(currentEnvelope(), .2f);
     } else if (change == AudioManager.AUDIOFOCUS_LOSS
         || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+      fm.cancel();
+      if (loading) {
+        generation++;
+        loading = false;
+        releaseMedia();
+      }
       playbackBuffer.stop();
       boolean shouldResume = isPlaying() || fadingOut || resumeAfterFocus;
       resumeAfterFocus = change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT && shouldResume;
@@ -929,6 +1187,7 @@ public final class PlaybackService extends Service {
 
   private void emit() {
     if (destroyed) return;
+    updateFmVisualizer();
     if (observer != null) observer.changed(snapshot());
   }
 
@@ -1074,6 +1333,7 @@ public final class PlaybackService extends Service {
   }
 
   private void releaseMedia() {
+    if (fmVisualizer != null) fmVisualizer.close();
     if (statusBarLyrics != null) statusBarLyrics.hide();
     lyricBuffering = false;
     if (floatingLyrics != null) floatingLyrics.stopAnimation();
@@ -1114,11 +1374,15 @@ public final class PlaybackService extends Service {
   public void onDestroy() {
     checkpoint();
     destroyed = true;
+    fm.stop();
     generation++;
     observer = null;
+    fmLevelObserver = null;
+    fmVisualizer.close();
     handler.removeCallbacksAndMessages(null);
     network.shutdownNow();
     favoriteWork.shutdownNow();
+    fmNetwork.shutdownNow();
     playbackBuffer.close();
     artworkLoader.close();
     floatingLyrics.hide();
@@ -1137,6 +1401,19 @@ public final class PlaybackService extends Service {
   public void refreshBuffer() {
     if (!destroyed && playbackBuffer != null)
       playbackBuffer.update(queue, index, mode, quality, isPlaying());
+  }
+
+  private void updateFmVisualizer() {
+    if (fmVisualizer == null) return;
+    if (fmVisualizerWanted && fmLevelObserver != null && fm.active && isPlaying() && !lyricBuffering)
+      fmVisualizer.start(media.getAudioSessionId());
+    else fmVisualizer.close();
+  }
+
+  public void detachFmVisualizer() {
+    fmVisualizerWanted = false;
+    fmLevelObserver = null;
+    if (fmVisualizer != null) fmVisualizer.close();
   }
 
   @Override

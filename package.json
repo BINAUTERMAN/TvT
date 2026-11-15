@@ -1,6 +1,7 @@
 {
   "name": "ting-music-android",
-  "version": "5.4.0",
+  "version": "5.5.0",
+  "releaseTag": "5.5v",
   "private": true,
   "license": "GPL-2.0-only",
   "type": "module",
@@ -8,7 +9,7 @@
     "dev": "vite web --host 127.0.0.1",
     "build": "node scripts/notices.mjs && vue-tsc --noEmit -p web/tsconfig.json && vite build web --base ./",
     "format": "prettier --write web/src tests/*.mjs scripts/*.mjs",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test --test-concurrency=2 tests/*.test.mjs",
     "apk": "powershell -ExecutionPolicy Bypass -File scripts/build-apk.ps1"
   },
   "dependencies": {

@@ -109,7 +109,7 @@ test('真实接口字段映射与多时间标签歌词解析', () => {
   );
 });
 
-test('手机、平板交互与主题、歌单持久化', async () => {
+test('手机、平板交互与主题', async () => {
   const browser = await chromium.launch({
     executablePath: browserPath,
     headless: true,
@@ -222,18 +222,9 @@ test('手机、平板交互与主题、歌单持久化', async () => {
         .locator(width < 700 ? '.bottom-nav' : '.sidebar nav')
         .getByRole('button', { name: '资料库' })
         .click();
-      await page.getByRole('button', { name: '创建第一张歌单' }).click();
-      await page.getByRole('textbox', { name: '歌单名称' }).fill('通勤音乐');
-      await page.getByRole('button', { name: '创建歌单', exact: true }).click();
-      await page.getByRole('heading', { name: '通勤音乐' }).waitFor();
-      await page.reload();
-      assert.ok(
-        (
-          await page.evaluate(() =>
-            JSON.parse(localStorage.getItem('playlists')),
-          )
-        ).some((p) => p.name === '通勤音乐'),
-      );
+      await page
+        .getByRole('heading', { name: '我的歌单', exact: true })
+        .waitFor();
       assert.deepEqual(errors, []);
       await page.close();
     }

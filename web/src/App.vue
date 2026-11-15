@@ -31,6 +31,14 @@ import VipPanel from './components/VipPanel.vue';
 import QualityPanel from './components/QualityPanel.vue';
 import FloatingLyricsPanel from './components/FloatingLyricsPanel.vue';
 import QueuePanel from './components/QueuePanel.vue';
+import PlaylistCreatePanel from './components/PlaylistCreatePanel.vue';
+import PlaylistImportPanel from './components/PlaylistImportPanel.vue';
+import {
+  cloudLibrary,
+  loadCloudPlaylists,
+  changeCloudTracks,
+} from './cloud-playlists';
+import type { CloudTrack } from './cloud-playlists';
 import NotificationPanel from './components/NotificationPanel.vue';
 import {
   notifications,
@@ -104,6 +112,7 @@ watch(
     ready,
     visible,
   ]) => {
+    if (!visible) return;
     if (permissionPrompt && !dialog && !playingPage) {
       notifications.prompt = false;
       sheet.value = 'notifications';
@@ -130,7 +139,6 @@ watch(
 );
 const selected = ref<Track>();
 const collection = ref('');
-const playlistName = ref('');
 const equalizer = ref(false);
 const speed = ref('1');
 const themeOptions = [
@@ -193,30 +201,48 @@ async function refresh() {
     ),
   ]);
 }
-function createPlaylist() {
-  const name = playlistName.value.trim();
-  if (!name) return;
-  const id = crypto.randomUUID();
-  library.playlists.push({ id, name, tracks: [] });
-  playlistName.value = '';
+function playlistCreated(id: string) {
   sheet.value = '';
   openCollection(id);
 }
-function addToPlaylist(id: string) {
-  const playlist = library.playlists.find((p) => p.id === id);
-  if (
-    playlist &&
-    selected.value &&
-    !playlist.tracks.some((t) => t.id === selected.value!.id)
-  )
-    playlist.tracks.push(selected.value);
-  notify('已加入歌单');
-  sheet.value = '';
+async function openAddPlaylist() {
+  if (!profile.loggedIn) {
+    sheet.value = 'account';
+    return;
+  }
+  sheet.value = 'add';
+  if (!cloudLibrary.loaded) {
+    try {
+      await loadCloudPlaylists();
+    } catch {
+      /* 读取失败在歌单选择区域显示。 */
+    }
+  }
+}
+async function addToPlaylist(id: string) {
+  if (!selected.value || !profile.loggedIn) return;
+  try {
+    await changeCloudTracks('addTracks', id, { tracks: [selected.value] });
+    notify('已添加到歌单');
+    sheet.value = '';
+  } catch (cause) {
+    notify((cause as Error).message);
+  }
 }
 async function removeFromCollection() {
   if (!selected.value) return;
   if (collection.value === 'favorites') void toggleFavorite(selected.value);
-  else if (collection.value === 'local') {
+  else if (collection.value.startsWith('remote-')) {
+    try {
+      await changeCloudTracks('removeTracks', collection.value, {
+        fileIds: [(selected.value as CloudTrack).fileId],
+      });
+      notify('已从云歌单移除');
+    } catch (cause) {
+      notify((cause as Error).message);
+      return;
+    }
+  } else if (collection.value === 'local') {
     if (selected.value.cached) {
       try {
         await removeCache(selected.value);
@@ -226,12 +252,6 @@ async function removeFromCollection() {
       }
     } else
       library.local = library.local.filter((t) => t.id !== selected.value!.id);
-  } else {
-    const playlist = library.playlists.find((p) => p.id === collection.value);
-    if (playlist)
-      playlist.tracks = playlist.tracks.filter(
-        (t) => t.id !== selected.value!.id,
-      );
   }
   sheet.value = '';
 }
@@ -395,12 +415,20 @@ onUnmounted(() => {
           <div v-show="!details.length" class="tab-stage">
             <Transition name="page">
               <PersonalHome
+                :active="
+                  tab === 'discover' &&
+                  !details.length &&
+                  !fullPlayer &&
+                  !sheet &&
+                  pageVisible
+                "
                 :key="String(profile.loggedIn)"
                 v-show="tab === 'discover'"
                 @open="openEntity"
                 @menu="menu"
                 @explore="navigate('explore')"
                 @account="sheet = 'account'"
+                @player="fullPlayer = true"
               />
             </Transition>
             <Transition name="page">
@@ -520,7 +548,7 @@ onUnmounted(() => {
           <ListMusic :size="21" />
           加入播放队列
         </button>
-        <button class="menu-item" @click="sheet = 'add'">
+        <button class="menu-item" @click="openAddPlaylist">
           <Plus :size="21" />
           添加到歌单
         </button>
@@ -540,7 +568,13 @@ onUnmounted(() => {
           }}
         </button>
         <button
-          v-if="collection && collection !== 'history'"
+          v-if="
+            collection &&
+            collection !== 'history' &&
+            (!collection.startsWith('remote-') ||
+              cloudLibrary.playlists.find((list) => list.id === collection)
+                ?.type === 0)
+          "
           class="menu-item danger"
           @click="removeFromCollection"
         >
@@ -551,53 +585,59 @@ onUnmounted(() => {
           }}
         </button>
       </template>
-      <template v-if="sheet === 'create'">
-        <h2>新建歌单</h2>
-        <form @submit.prevent="createPlaylist">
-          <input
-            v-model="playlistName"
-            class="text-input"
-            autofocus
-            maxlength="40"
-            placeholder="给歌单起个名字"
-            aria-label="歌单名称"
-          />
-          <button class="primary full-width" :disabled="!playlistName.trim()">
-            创建歌单
-          </button>
-        </form>
-      </template>
+      <PlaylistCreatePanel
+        v-if="sheet === 'create'"
+        @created="playlistCreated"
+        @account="sheet = 'account'"
+      />
       <template v-if="sheet === 'add'">
         <h2>添加到歌单</h2>
-        <button
-          v-for="list in library.playlists"
-          :key="list.id"
-          class="menu-item"
-          @click="addToPlaylist(list.id)"
-        >
-          <ListMusic :size="21" />
-          {{ list.name }}
+        <template v-if="profile.loggedIn">
+          <button
+            v-for="list in cloudLibrary.playlists.filter(
+              (list) => list.type === 0 && !list.isDefault,
+            )"
+            :key="list.id"
+            class="menu-item"
+            :disabled="cloudLibrary.busy || !!selected?.uri || !selected?.hash"
+            @click="addToPlaylist(list.id)"
+          >
+            <ListMusic :size="21" />
+            {{ list.name }}
+          </button>
+          <p v-if="cloudLibrary.error" class="inline-error" role="status">
+            {{ cloudLibrary.error }}
+          </p>
+          <p v-if="cloudLibrary.busy" class="loading">正在同步歌单…</p>
+          <p
+            v-else-if="
+              !cloudLibrary.error &&
+              !cloudLibrary.playlists.some(
+                (list) => list.type === 0 && !list.isDefault,
+              )
+            "
+            class="muted"
+          >
+            还没有可添加的歌单。
+          </p>
+          <button
+            class="menu-item"
+            :disabled="cloudLibrary.busy"
+            @click="sheet = 'create'"
+          >
+            新建歌单
+          </button>
+        </template>
+        <button v-else class="primary full-width" @click="sheet = 'account'">
+          登录后使用歌单
         </button>
-        <p v-if="!library.playlists.length" class="muted">
-          还没有歌单，先在资料库创建一张吧。
-        </p>
       </template>
-      <template v-if="sheet === 'delete'">
-        <h2>删除这张歌单？</h2>
-        <p class="muted">歌单中的音乐文件不会被删除。</p>
-        <button
-          class="primary danger-bg"
-          @click="
-            library.playlists = library.playlists.filter(
-              (p) => p.id !== collection,
-            );
-            collection = '';
-            sheet = '';
-          "
-        >
-          确认删除
-        </button>
-      </template>
+      <PlaylistImportPanel
+        v-if="sheet === 'playlistImport'"
+        @account="sheet = 'account'"
+        @create="sheet = 'create'"
+        @open="playlistCreated"
+      />
       <QueuePanel v-if="sheet === 'queue'" />
       <template v-if="sheet === 'sleep'">
         <h2>让音乐陪你入睡</h2>
@@ -703,21 +743,6 @@ onUnmounted(() => {
           锁屏与悬浮通知
         </button>
         <h3>音乐与存储</h3>
-        <button
-          class="menu-item"
-          @click="
-            command('exportLibrary', {
-              version: 1,
-              favorites: library.favorites,
-              playlists: library.playlists,
-            })
-          "
-        >
-          备份资料库
-        </button>
-        <button class="menu-item" @click="command('importLibrary')">
-          导入资料库备份
-        </button>
         <button class="menu-item" @click="openCache">管理歌曲缓存</button>
         <button
           class="menu-item"
@@ -743,7 +768,12 @@ onUnmounted(() => {
         </p>
       </template>
       <template v-if="sheet === 'account'">
-        <AccountPanel />
+        <AccountPanel
+          @playlists="
+            navigate('library');
+            sheet = '';
+          "
+        />
         <button
           v-if="profile.loggedIn"
           class="menu-item"

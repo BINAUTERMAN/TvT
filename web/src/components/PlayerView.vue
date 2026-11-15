@@ -15,6 +15,9 @@ import {
   AudioLines,
   Moon,
   Languages,
+  ThumbsDown,
+  Radio,
+  RefreshCw,
 } from 'lucide-vue-next';
 import { native } from '../bridge';
 import { clock } from '../music';
@@ -41,6 +44,10 @@ const lyrics = ref<LyricLine[]>([]);
 const lyricStatus = ref('');
 const translationAvailable = ref(false);
 const translationRequested = ref(false);
+function fmAction() {
+  if (player.fmError) void command('fmRetry');
+  else if (current.value) void command('fmDislike', { id: current.value.id });
+}
 function toggleTranslation() {
   const wasOpen = lyricsOpen.value;
   lyricsOpen.value = true;
@@ -164,7 +171,17 @@ watch(
         <button class="icon" aria-label="收起播放页" @click="emit('close')">
           <ChevronDown :size="27" />
         </button>
-        <span class="eyebrow">
+        <button
+          v-if="player.personalFm"
+          class="text-button fm-exit"
+          aria-label="退出随心听"
+          @click="command('fmStop')"
+        >
+          <Radio :size="15" />
+          随心听
+          <span class="muted">· 退出</span>
+        </button>
+        <span v-else class="eyebrow">
           {{ lyricsOpen ? '随歌而行' : '此刻正在播放' }}
         </span>
         <button
@@ -259,7 +276,19 @@ watch(
           </div>
           <div class="playback-status" role="status" aria-live="polite">
             <Transition name="status" mode="out-in">
-              <span v-if="player.loading" key="loading">正在加载音频…</span>
+              <span
+                v-if="player.personalFm && player.fmError"
+                key="fm-error"
+                :title="player.fmError"
+              >
+                {{ player.fmError }}
+              </span>
+              <span v-else-if="player.fmWaiting" key="fm-waiting">
+                正在为你续上下一首…
+              </span>
+              <span v-else-if="player.loading" key="loading">
+                正在加载音频…
+              </span>
               <span v-else-if="player.interrupted" key="interrupted">
                 已为其他声音暂停，结束后自动继续
               </span>
@@ -284,6 +313,21 @@ watch(
           </div>
           <div class="transport">
             <button
+              v-if="player.personalFm"
+              class="icon"
+              :aria-label="player.fmError ? '重试随心听' : '不喜欢，减少推荐'"
+              :disabled="
+                player.fmBusy ||
+                (player.fmWaiting && !player.fmError) ||
+                player.loading
+              "
+              @click="fmAction"
+            >
+              <RefreshCw v-if="player.fmError" :size="22" />
+              <ThumbsDown v-else :size="22" />
+            </button>
+            <button
+              v-else
               class="icon"
               aria-label="切换播放模式"
               @click="command('mode', { mode: (player.mode + 1) % 3 })"

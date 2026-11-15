@@ -1,0 +1,15 @@
+[Unit]
+Description=TvT questionnaire minimal public ports
+Before=nginx.service
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/nft delete table inet tvt_survey
+ExecStart=/usr/sbin/nft -f /etc/tvt-survey/firewall.nft
+ExecStop=/usr/sbin/nft delete table inet tvt_survey
+
+[Install]
+WantedBy=multi-user.target

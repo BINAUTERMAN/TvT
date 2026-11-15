@@ -38,19 +38,11 @@ final class FavoritesRepository {
       listId = 0;
       for (int index = 0; index < lists.length(); index++) {
         JSONObject item = lists.getJSONObject(index);
-        if (item.optString("name").equals("我喜欢")) {
+        if (item.optInt("is_def") == 2) {
           listId = item.optLong("listid");
           break;
         }
       }
-      if (listId == 0)
-        for (int index = 0; index < lists.length(); index++) {
-          JSONObject item = lists.getJSONObject(index);
-          if (item.optInt("is_def") == 1) {
-            listId = item.optLong("listid");
-            break;
-          }
-        }
       if (listId == 0) throw new Exception("未找到酷狗账号的我喜欢歌单");
       Map<String, JSONObject> loaded = new LinkedHashMap<>();
       Map<String, Long> ids = new LinkedHashMap<>();

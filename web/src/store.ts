@@ -1,6 +1,6 @@
 import { computed, reactive, watch } from 'vue';
 import { native } from './bridge';
-import type { Playback, Playlist, Track } from './types';
+import type { Playback, Track } from './types';
 import { sameTrack, cleanTitle } from './music';
 import { tracksFrom, invalidateCatalog } from './catalog';
 import { resetVip } from './vip';
@@ -17,7 +17,6 @@ export const library = reactive({
   favorites: read<Track[]>('favorites', []),
   local: read<Track[]>('local', []),
   history: read<Track[]>('history', []),
-  playlists: read<Playlist[]>('playlists', []),
   searches: read<string[]>('searches', []).slice(0, 10),
   theme: read<string>('theme', 'system'),
 });
@@ -155,6 +154,7 @@ export async function refreshAccount() {
     .replace('http:', 'https:')
     .replaceAll('{size}', '100');
   if (changed) {
+    library.favorites = [];
     invalidateCatalog();
     resetVip();
     resetCheckin();
@@ -164,10 +164,7 @@ export async function refreshAccount() {
 export async function syncFavorites(refresh = false) {
   if (!profile.loggedIn) return;
   const tracks = tracksFrom(await native('favorites', { refresh }));
-  library.favorites = [
-    ...tracks,
-    ...library.favorites.filter((track) => !!track.uri),
-  ];
+  library.favorites = tracks;
 }
 export async function updatePreference(
   key: keyof typeof preferences,
@@ -198,6 +195,7 @@ window.nativePlayback = (state) => {
     }));
   if (
     current.value?.hash &&
+    profile.loggedIn &&
     state.favoritesReady &&
     !pendingLikes.has(current.value.hash)
   )
@@ -230,12 +228,12 @@ export async function toggleFavorite(track: Track) {
   const key = track.hash || track.id;
   if (pendingLikes.has(key)) return;
   const liked = isLiked(track);
-  if (!track.hash) {
-    updateLike(track, !liked);
-    return;
-  }
   if (!profile.loggedIn) {
     notify('请先登录酷狗账号，以同步我喜欢');
+    return;
+  }
+  if (!track.hash || track.uri) {
+    notify('我喜欢仅支持酷狗曲库歌曲');
     return;
   }
   pendingLikes.add(key);

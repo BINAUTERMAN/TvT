@@ -26,6 +26,7 @@ function restore(element: Element) {
         <section
           :key="name"
           class="sheet-panel"
+          :class="{ 'survey-invite-panel': name === 'surveyInvite' }"
           role="dialog"
           aria-modal="true"
           :aria-label="name"
@@ -45,3 +46,9 @@ function restore(element: Element) {
     </div>
   </Transition>
 </template>
+
+<style scoped>
+.sheet-panel.survey-invite-panel {
+  padding: 26px 20px 18px;
+}
+</style>

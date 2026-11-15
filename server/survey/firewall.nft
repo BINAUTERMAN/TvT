@@ -1,0 +1,14 @@
+table inet tvt_survey {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        iifname "lo" accept
+        ct state invalid drop
+        ct state established,related accept
+        meta l4proto { icmp, ipv6-icmp } accept
+        tcp dport 22 ct state new limit rate 20/minute burst 30 packets accept
+        tcp dport { 80, 443 } ct state new limit rate 60/second burst 120 packets accept
+    }
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+}

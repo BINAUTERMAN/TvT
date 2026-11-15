@@ -1,0 +1,13 @@
+[Unit]
+Description=Renew TvT public IP HTTPS certificate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tvt-certbot/bin/certbot renew --quiet --cert-name tvt-survey-ip --no-random-sleep-on-renew --deploy-hook "/usr/sbin/nginx -t && /bin/systemctl reload nginx"
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+TimeoutStartSec=300

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { ArrowLeft, Play, Plus, Check } from 'lucide-vue-next';
+import { ArrowLeft, Play, Plus } from 'lucide-vue-next';
 import {
   catalog,
   clean,
@@ -11,11 +11,13 @@ import {
 } from '../catalog';
 import type { Raw } from '../catalog';
 import type { MusicEntity, Track } from '../types';
-import { library, play, notify } from '../store';
+import { play, notify } from '../store';
 import Artwork from './Artwork.vue';
 import TrackList from './TrackList.vue';
 import EntityGrid from './EntityGrid.vue';
 import ContentTransition from './ContentTransition.vue';
+import { cloudLibrary, changeCloudLists } from '../cloud-playlists';
+import { profile } from '../store';
 const props = defineProps<{ item: MusicEntity }>();
 const emit = defineEmits<{
   back: [];
@@ -31,11 +33,31 @@ const section = ref('songs');
 const page = ref(1);
 const more = ref(false);
 const expanded = ref(false);
-const saved = computed(() =>
-  library.playlists.some(
-    (list) => list.id === `${props.item.kind}-${props.item.id}`,
+const collecting = ref(false);
+const cloudSaved = computed(() =>
+  cloudLibrary.playlists.some(
+    (list) => list.type === 1 && list.sourceId === props.item.id,
   ),
 );
+async function collectCloud() {
+  if (!profile.loggedIn) {
+    notify('请先登录酷狗账号，再收藏云歌单');
+    return;
+  }
+  if (collecting.value) return;
+  collecting.value = true;
+  try {
+    await changeCloudLists('collect', {
+      name: info.value.name,
+      source: { globalId: props.item.id },
+    });
+    notify('已收藏歌单');
+  } catch (cause) {
+    notify((cause as Error).message);
+  } finally {
+    collecting.value = false;
+  }
+}
 const kindName = computed(
   () =>
     ({ artist: '歌手', album: '专辑', playlist: '歌单', rank: '排行榜' })[
@@ -129,19 +151,6 @@ async function details() {
     } catch {}
   }
 }
-function save() {
-  if (!tracks.value.length) return;
-  const id = `${props.item.kind}-${props.item.id}`;
-  const existing = library.playlists.find((list) => list.id === id);
-  if (existing) existing.tracks = [...tracks.value];
-  else
-    library.playlists.push({
-      id,
-      name: info.value.name,
-      tracks: [...tracks.value],
-    });
-  notify('已保存到资料库');
-}
 onMounted(() => {
   void load();
   void details();
@@ -174,11 +183,16 @@ onMounted(() => {
         <Play :size="17" fill="currentColor" />
         播放
       </button>
-      <button class="secondary-button" :disabled="!tracks.length" @click="save">
-        <component :is="saved ? Check : Plus" :size="18" />
-        {{ saved ? '更新收藏' : '保存歌单' }}
-      </button>
       <small>{{ tracks.length }} 首已加载</small>
+      <button
+        v-if="item.kind === 'playlist' && !item.presetTracks"
+        class="secondary-button"
+        :disabled="collecting || cloudLibrary.busy || cloudSaved"
+        @click="collectCloud"
+      >
+        <Plus :size="18" />
+        {{ cloudSaved ? '已收藏' : collecting ? '正在收藏…' : '收藏歌单' }}
+      </button>
     </div>
     <div v-if="item.kind === 'artist'" class="segmented">
       <button

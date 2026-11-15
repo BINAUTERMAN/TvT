@@ -35,10 +35,15 @@ export function native<T = unknown>(
     return Promise.reject(new Error('请在安卓应用中使用此功能'));
   const id = String(++sequence);
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      pending.delete(id);
-      reject(new Error('请求超时，请检查网络后重试'));
-    }, 35000);
+    const timer = window.setTimeout(
+      () => {
+        pending.delete(id);
+        reject(new Error('请求超时，请检查网络后重试'));
+      },
+      action === 'importPlaylistImage' || action === 'importPlaylist'
+        ? 120000
+        : 35000,
+    );
     pending.set(id, {
       resolve: resolve as (data: unknown) => void,
       reject,

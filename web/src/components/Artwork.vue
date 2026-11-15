@@ -12,8 +12,15 @@ const sources = computed(() => [
 const index = ref(0);
 const source = computed(() => sources.value[index.value]);
 const loaded = ref(false);
-watch(sources, () => {
+watch(sources, (next, previous) => {
+  if (
+    next.length === previous.length &&
+    next.every((url, index) => url === previous[index])
+  )
+    return;
   index.value = 0;
+});
+watch(source, () => {
   loaded.value = false;
 });
 function nextSource() {

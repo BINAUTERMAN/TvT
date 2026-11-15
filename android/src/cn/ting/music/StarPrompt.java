@@ -22,13 +22,14 @@ final class StarPrompt {
 
   void started(String session) {
     synchronized (LOCK) {
+      int limit = SurveyFeedback.isEnabled(context) ? 11 : 5;
       if (session.isEmpty()
-          || saved.getBoolean("shown", false)
+          || saved.getInt("plays", 0) >= limit
           || session.equals(saved.getString("lastSession", ""))) return;
-      int previous = saved.getInt("plays", 0), count = Math.min(5, previous + 1);
+      int previous = saved.getInt("plays", 0), count = Math.min(limit, previous + 1);
       boolean stored =
           saved.edit().putInt("plays", count).putString("lastSession", session).commit();
-      if (stored && previous < 5 && count == 5)
+      if (stored && (count == 5 || count == 11))
         context.sendBroadcast(new Intent(READY).setPackage(context.getPackageName()));
     }
   }
@@ -60,7 +61,22 @@ final class StarPrompt {
     synchronized (LOCK) {
       if (!status().optBoolean("eligible")) return false;
       repositoryUrl();
-      return saved.edit().putBoolean("shown", true).remove("lastSession").commit();
+      return saved.edit().putBoolean("shown", true).commit();
+    }
+  }
+
+  JSONObject surveyStatus() throws Exception {
+    synchronized (LOCK) {
+      return new JSONObject().put("eligible", SurveyFeedback.isEnabled(context)
+          && saved.getInt("plays", 0) > 10
+          && !saved.getBoolean("surveyShown", false));
+    }
+  }
+
+  boolean consumeSurvey() throws Exception {
+    synchronized (LOCK) {
+      return surveyStatus().getBoolean("eligible")
+          && saved.edit().putBoolean("surveyShown", true).commit();
     }
   }
 }

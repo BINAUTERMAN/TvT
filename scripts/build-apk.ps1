@@ -24,6 +24,9 @@ $updateConfig = Get-Content config/update.json -Raw | ConvertFrom-Json
 if ($env:TING_UPDATE_REPOSITORY) { $updateConfig.repository = $env:TING_UPDATE_REPOSITORY }
 if ($env:TING_GITEE_REPOSITORY) { $updateConfig.giteeRepository = $env:TING_GITEE_REPOSITORY }
 [IO.File]::WriteAllText((Join-Path $workspacePath 'build/assets/update.json'), ($updateConfig | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+$surveyConfig = Get-Content config/survey.json -Raw | ConvertFrom-Json
+if (!$surveyConfig.enabled) { $surveyConfig.endpoint = '' }
+[IO.File]::WriteAllText((Join-Path $workspacePath 'build/assets/survey.json'), ($surveyConfig | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
 Run-Checked "$toolPath/aapt2.exe" @('compile', '--dir', 'android/res', '-o', 'build/resources.zip')
 Run-Checked "$toolPath/aapt2.exe" @('link', '-o', 'build/base.apk', '-I', $androidJar, '--manifest', 'android/AndroidManifest.xml', '--java', 'build/generated', '-A', 'build/assets', 'build/resources.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem

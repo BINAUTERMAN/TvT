@@ -10,8 +10,15 @@
     <instrumentation android:name="cn.ting.music.tests.CacheChecks" android:targetPackage="cn.ting.music" android:label="听屿离线缓存验证" />
     <instrumentation android:name="cn.ting.music.tests.BufferChecks" android:targetPackage="cn.ting.music" android:label="听屿预缓存验证" />
     <instrumentation android:name="cn.ting.music.tests.StarChecks" android:targetPackage="cn.ting.music" android:label="TvT 提醒与品牌验证" />
+    <instrumentation android:name="cn.ting.music.tests.SurveyUiChecks" android:targetPackage="cn.ting.music" android:label="TvT 问卷隐藏验证" />
+    <instrumentation android:name="cn.ting.music.tests.SurveyApiChecks" android:targetPackage="cn.ting.music" android:label="TvT 问卷原生开关验证" />
     <instrumentation android:name="cn.ting.music.tests.LyricsChecks" android:targetPackage="cn.ting.music" android:label="TvT 原生桌面歌词验证" />
     <instrumentation android:name="cn.ting.music.tests.LyricsInteractionChecks" android:targetPackage="cn.ting.music" android:label="TvT 歌词旋转与交互验证" />
     <instrumentation android:name="cn.ting.music.tests.HomeLayoutChecks" android:targetPackage="cn.ting.music" android:label="TvT 主页封面布局验证" />
     <instrumentation android:name="cn.ting.music.tests.UpdateChecks" android:targetPackage="cn.ting.music" android:label="TvT 更新来源与真实接口验证" />
+    <instrumentation android:name="cn.ting.music.tests.PersonalFmChecks" android:targetPackage="cn.ting.music" android:label="TvT 随心听真实播放验证" />
+    <instrumentation android:name="cn.ting.music.tests.CloudPlaylistChecks" android:targetPackage="cn.ting.music" android:label="TvT 云歌单真实读写验证" />
+    <instrumentation android:name="cn.ting.music.tests.CloudArtworkChecks" android:targetPackage="cn.ting.music" android:label="TvT 云歌单冷启动封面验证" />
+    <instrumentation android:name="cn.ting.music.tests.PlaylistOriginChecks" android:targetPackage="cn.ting.music" android:label="TvT 歌单来源只读核对" />
+    <instrumentation android:name="cn.ting.music.tests.PlaylistImportChecks" android:targetPackage="cn.ting.music" android:label="TvT 外部歌单真实导入验证" />
 </manifest>

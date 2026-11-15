@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import {
   Plus,
   Heart,
   Clock3,
   FolderDown,
-  ListMusic,
   ArrowLeft,
   Play,
   Music2,
+  CloudDownload,
 } from 'lucide-vue-next';
 import {
   library,
@@ -18,11 +18,13 @@ import {
   cacheSong,
   removeCache,
   notify,
+  profile,
 } from '../store';
 import type { Track } from '../types';
-import Artwork from './Artwork.vue';
 import TrackList from './TrackList.vue';
 import ContentTransition from './ContentTransition.vue';
+import CloudPlaylistSection from './CloudPlaylistSection.vue';
+import CloudPlaylistDetail from './CloudPlaylistDetail.vue';
 const collection = defineModel<string>('collection', { default: '' });
 const emit = defineEmits<{ menu: [track: Track]; sheet: [name: string] }>();
 async function dismissJob(track: Track) {
@@ -36,32 +38,57 @@ const collectionTracks = computed(() => {
   if (collection.value === 'favorites') return library.favorites;
   if (collection.value === 'history') return library.history;
   if (collection.value === 'local') return library.local;
-  return library.playlists.find((p) => p.id === collection.value)?.tracks ?? [];
+  return [];
 });
 const collectionTitle = computed(
   () =>
     ({ favorites: '我喜欢的音乐', history: '最近播放', local: '本地音乐' })[
       collection.value
-    ] ??
-    library.playlists.find((p) => p.id === collection.value)?.name ??
-    '资料库',
+    ] ?? '资料库',
+);
+watch(
+  () => profile.loggedIn,
+  (loggedIn) => {
+    if (
+      !loggedIn &&
+      (collection.value === 'favorites' ||
+        collection.value.startsWith('remote-'))
+    )
+      collection.value = '';
+  },
 );
 </script>
 <template>
   <section class="page library-page">
     <ContentTransition :identity="collection || 'library'">
-      <template v-if="!collection">
+      <CloudPlaylistDetail
+        v-if="collection.startsWith('remote-')"
+        :id="collection"
+        @back="collection = ''"
+        @menu="emit('menu', $event)"
+      />
+      <template v-else-if="!collection">
         <div class="title-line">
           <h1>资料库</h1>
         </div>
         <div class="library-grid">
           <button
             class="library-card liked-card"
-            @click="collection = 'favorites'"
+            @click="
+              profile.loggedIn
+                ? (collection = 'favorites')
+                : emit('sheet', 'account')
+            "
           >
             <Heart :size="29" />
             <strong>我喜欢的音乐</strong>
-            <small>{{ library.favorites.length }} 首</small>
+            <small>
+              {{
+                profile.loggedIn
+                  ? `${library.favorites.length} 首`
+                  : '登录后同步'
+              }}
+            </small>
           </button>
           <button class="library-card" @click="collection = 'history'">
             <Clock3 :size="29" />
@@ -74,33 +101,19 @@ const collectionTitle = computed(
             <small>{{ library.local.length }} 首 · 随时离线听</small>
           </button>
         </div>
-        <div class="section-heading">
-          <h2>我的歌单</h2>
-          <button class="text-button" @click="emit('sheet', 'create')">
-            <Plus :size="17" />
-            新建
-          </button>
-        </div>
-        <div v-if="!library.playlists.length" class="empty compact">
-          <ListMusic :size="35" />
-          <h3>还没有歌单</h3>
-          <p>创建歌单，收藏喜欢的音乐。</p>
-          <button class="primary" @click="emit('sheet', 'create')">
-            创建第一张歌单
-          </button>
-        </div>
-        <div class="playlist-grid">
-          <button
-            v-for="list in library.playlists"
-            :key="list.id"
-            class="playlist-card"
-            @click="collection = list.id"
-          >
-            <Artwork :src="list.tracks[0]?.cover" :seed="list.name" />
-            <strong>{{ list.name }}</strong>
-            <small>{{ list.tracks.length }} 首歌曲</small>
-          </button>
-        </div>
+        <CloudPlaylistSection
+          @open="collection = $event"
+          @create="emit('sheet', 'create')"
+          @account="emit('sheet', 'account')"
+        />
+        <button
+          v-if="profile.loggedIn"
+          class="secondary-button full-width"
+          @click="emit('sheet', 'playlistImport')"
+        >
+          <CloudDownload :size="18" />
+          导入外部歌单
+        </button>
       </template>
       <template v-else>
         <button class="text-button back-link" @click="collection = ''">
@@ -185,13 +198,6 @@ const collectionTitle = computed(
             }}
           </p>
         </div>
-        <button
-          v-if="!['favorites', 'history', 'local'].includes(collection)"
-          class="text-button danger"
-          @click="emit('sheet', 'delete')"
-        >
-          删除歌单
-        </button>
       </template>
     </ContentTransition>
   </section>

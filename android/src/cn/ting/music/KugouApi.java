@@ -79,6 +79,10 @@ public final class KugouApi {
     return savedAccount().optString("token");
   }
 
+  JSONObject accountIdentity() {
+    return savedAccount();
+  }
+
   JSONObject catalogRequest(
       String endpoint, String router, TreeMap<String, String> params, Object body)
       throws Exception {
@@ -652,13 +656,13 @@ public final class KugouApi {
   }
 
   private void requireSuccess(JSONObject response, String fallback) throws Exception {
-    if (response.optInt("status") == 1) return;
+    int code = response.optInt("error_code", response.optInt("errcode", response.optInt("err_code", 0)));
+    if (response.optInt("status") == 1 && code == 0) return;
     if (response.optInt("errcode") == 20028 || response.optInt("error_code") == 20028)
       throw new Exception("平台要求安全验证，请稍后重试或使用扫码登录");
     String message =
         response.optString(
-            "error_msg", response.optString("msg", response.optString("error", fallback)));
-    int code = response.optInt("error_code", response.optInt("errcode", 0));
+            "error_msg", response.optString("errmsg", response.optString("msg", response.optString("error", fallback))));
     throw new Exception(
         (message.isEmpty() ? fallback : message) + (code == 0 ? "" : "（" + code + "）"));
   }
@@ -706,31 +710,89 @@ public final class KugouApi {
   }
 
   public JSONObject cloudPlaylists() throws Exception {
+    return cloudPlaylists(1);
+  }
+
+  JSONObject cloudPlaylists(int page) throws Exception {
     JSONObject account = savedAccount();
     if (account.optString("token").isEmpty()) throw new Exception("请先登录酷狗账号");
     JSONObject body =
         new JSONObject()
             .put("userid", account.optLong("userid"))
             .put("token", account.optString("token"))
-            .put("total_ver", 979)
+            .put("total_ver", 0)
             .put("type", 2)
-            .put("page", 1)
+            .put("page", Math.max(1, page))
             .put("pagesize", 100);
     TreeMap<String, String> params = new TreeMap<>();
     params.put("plat", "1");
     JSONObject response =
-        signed(
+        ownedCatalogRequest(
             "https://gateway.kugou.com/v7/get_all_list",
             "cloudlist.service.kugou.com",
             params,
-            body);
+            body,
+            account.optString("token"));
     if (response.optInt("error_code") == 20017) {
       account.put("invalid_session", true);
-      accounts.save(account);
+      if (accountToken().equals(account.optString("token"))) accounts.save(account);
       throw new Exception("账号登录信息已失效，请重新使用手机验证码登录");
     }
     requireSuccess(response, "云端歌单读取失败，请稍后重试");
     return response;
+  }
+
+  JSONObject cloudRequest(String path, JSONObject data) throws Exception {
+    return cloudRequest(path, data, accountToken());
+  }
+
+  JSONObject cloudRequest(String path, JSONObject data, String expectedToken) throws Exception {
+    JSONObject account = savedAccount();
+    if (!expectedToken.equals(account.optString("token"))) throw new Exception("账号已变化，请重新加载云歌单");
+    if (!java.util.Arrays.asList("/v1/modify_list", "/v1/modify_list_sort",
+        "/v1/modify_song_sort", "/v2/delete_list").contains(path))
+      throw new Exception("云歌单操作无效");
+    String session = UUID.randomUUID().toString().replace("-", "").substring(0, 6);
+    String time = String.valueOf(System.currentTimeMillis() / 1000);
+    TreeMap<String, String> query = new TreeMap<>();
+    query.put("appid", "3116");
+    query.put("clientver", "11440");
+    query.put("mid", mid);
+    query.put("dfid", dfid);
+    query.put("clienttime", time);
+    query.put("key", md5("3116LnT6xpN3khm36zse0QzvmgTZ3waWdRSA11440" + time));
+    query.put("p", LoginProtocol.rsaSession(new JSONObject().put("aes", session)
+        .put("uid", account.optLong("userid")).put("token", expectedToken).toString()));
+    String encrypted = LoginProtocol.encryptRegistration(data.toString(), session);
+    if (path.equals("/v2/delete_list")) {
+      query.put("last_area", "gztx");
+      query.put("last_time", time);
+      query.put("userid", account.optString("userid"));
+      query.put("token", expectedToken);
+      return signed("https://gateway.kugou.com" + path, "cloudlist.service.kugou.com", query, encrypted, session, false);
+    }
+    byte[] body = java.util.Base64.getDecoder().decode(encrypted);
+    return request("https://gateway.kugou.com" + path, "cloudlist.service.kugou.com", query, body, session);
+  }
+
+  JSONObject importRequest(String path, JSONObject body, String expectedToken) throws Exception {
+    if (!java.util.Arrays.asList("/assetservice/import/v1/add_task", "/assetservice/import/v1/submit_img",
+        "/assetservice/import/v1/query_task_status", "/assetservice/import/v1/task_count", "/pubsongs/v1/query_task").contains(path))
+      throw new Exception("歌单导入操作无效");
+    JSONObject account = savedAccount();
+    if (!account.optString("token").equals(expectedToken)) throw new Exception("账号已变化，请重新打开导入");
+    body.put("userid", account.optString("userid")).put("token", expectedToken);
+    return signed("https://gateway.kugou.com" + path, "", new TreeMap<>(), body, null, false);
+  }
+
+  JSONObject ownedCatalogRequest(String endpoint, String router, TreeMap<String, String> query,
+      JSONObject body, String expectedToken) throws Exception {
+    JSONObject account = savedAccount();
+    if (!expectedToken.equals(account.optString("token"))) throw new Exception("账号已变化，请重新打开云歌单");
+    query.put("userid", account.optString("userid"));
+    query.put("token", expectedToken);
+    body.put("userid", account.optLong("userid")).put("token", expectedToken);
+    return signed(endpoint, router, query, body, null, false);
   }
 
   public JSONObject playlist(String id, int page) throws Exception {
@@ -805,7 +867,7 @@ public final class KugouApi {
                 ? "application/x-www-form-urlencoded"
                 : "application/json; charset=UTF-8");
         try (java.io.OutputStream output = connection.getOutputStream()) {
-          output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+          output.write(body instanceof byte[] ? (byte[]) body : body.toString().getBytes(StandardCharsets.UTF_8));
         }
       }
       if (connection.getResponseCode() != 200) throw new Exception("音乐服务暂不可用，请稍后重试");

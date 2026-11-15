@@ -5,6 +5,8 @@ const props = defineProps<{
   modelValue: string;
   label: string;
   options: readonly { value: string; label: string }[];
+  disabled?: boolean;
+  fullWidth?: boolean;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 const expanded = ref(false);
@@ -72,17 +74,23 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <div ref="root" class="option-picker" @keydown="keydown">
+  <div
+    ref="root"
+    class="option-picker"
+    :class="{ 'option-picker-wide': fullWidth }"
+    @keydown="keydown"
+  >
     <button
       type="button"
       role="combobox"
+      :disabled="disabled"
       :aria-label="label"
       :aria-expanded="expanded"
       :aria-controls="id"
       :data-value="modelValue"
       @click="expanded = !expanded"
     >
-      {{ selected }}
+      <span>{{ selected }}</span>
       <ChevronDown :size="16" :class="{ expanded }" />
     </button>
     <Transition
@@ -106,7 +114,7 @@ onUnmounted(() => {
           :aria-selected="modelValue === option.value"
           @click="choose(option.value)"
         >
-          {{ option.label }}
+          <span>{{ option.label }}</span>
           <Check v-if="modelValue === option.value" :size="17" />
         </button>
       </div>
@@ -131,6 +139,33 @@ onUnmounted(() => {
 }
 .option-picker > button svg {
   transition: transform var(--motion-duration) var(--motion-ease);
+}
+.option-picker-wide {
+  max-width: 100%;
+  width: 100%;
+}
+.option-picker-wide > button {
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  min-height: 50px;
+}
+.option-picker > button > span,
+.option-list > button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.option-picker-wide .option-list {
+  width: 100%;
+  min-width: 0;
+  max-height: 260px;
+  overflow-y: auto;
 }
 .expanded {
   transform: rotate(180deg);

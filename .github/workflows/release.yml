@@ -89,8 +89,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version -replace '\.0$', ''
-          $tag = $version
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $version = $package.version -replace '\.0$', ''
+          $tag = if ($package.releaseTag) { $package.releaseTag } else { $version }
+          if ($tag -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Invalid release tag' }
           $releaseFiles = @("artifacts/release/TvT-$version.apk", 'artifacts/release/update-manifest.json')
           $publishedTarget = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" --jq '.target_commitish' 2>$null
           if ($LASTEXITCODE -eq 0) {

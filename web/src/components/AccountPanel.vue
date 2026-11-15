@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import QRCode from 'qrcode';
 import { native } from '../bridge';
 import { notify, library, refreshAccount, syncFavorites } from '../store';
-import { normalize } from '../music';
 import { vip, refreshVip } from '../vip';
 import ContentTransition from './ContentTransition.vue';
 const vipLabel = computed(() => vip.label);
@@ -36,7 +35,7 @@ let cooldownEnd = 0;
 let cooldownTimer = 0;
 const validMobile = computed(() => /^1[3-9]\d{9}$/.test(mobile.value));
 const validCode = computed(() => /^\d{4,8}$/.test(code.value));
-const cloud = ref<{ id: string; name: string }[]>([]);
+const emit = defineEmits<{ playlists: [] }>();
 let timer = 0;
 let disposed = false;
 let expires = 0;
@@ -203,69 +202,11 @@ function visibility() {
   if (!document.hidden && qrImage.value && !loggedIn.value)
     timer = window.setTimeout(checkQr, 500);
 }
-async function loadCloud() {
-  busy.value = true;
-  try {
-    const response = await native<{
-      data?: {
-        info?: Record<string, unknown>[];
-        lists?: Record<string, unknown>[];
-      };
-    }>('cloudPlaylists');
-    cloud.value = (response.data?.info ?? response.data?.lists ?? [])
-      .map((item) => ({
-        id: String(item.global_collection_id ?? ''),
-        name: String(item.name ?? item.listname ?? '未命名歌单'),
-      }))
-      .filter((item) => item.id);
-    if (!cloud.value.length) notify('账号暂无可导入的歌单，或接口暂不可用');
-  } catch (error) {
-    notify((error as Error).message);
-    await account();
-  } finally {
-    busy.value = false;
-  }
-}
-async function importCloud(list: { id: string; name: string }) {
-  busy.value = true;
-  try {
-    const tracks = [];
-    for (let page = 1; page <= 30; page++) {
-      const response = await native<{
-        data?: {
-          songs?: Record<string, unknown>[];
-          info?: Record<string, unknown>[];
-        };
-      }>('playlist', { id: list.id, page });
-      const rows = response.data?.songs ?? response.data?.info ?? [];
-      tracks.push(...rows.map(normalize).filter((t) => t.hash));
-      if (rows.length < 100) break;
-    }
-    if (!tracks.length) throw new Error('歌单没有返回可导入的歌曲');
-    const existing = library.playlists.find((p) => p.id === `cloud-${list.id}`);
-    const unique = [
-      ...new Map(tracks.map((track) => [track.id, track])).values(),
-    ];
-    if (existing) existing.tracks = unique;
-    else
-      library.playlists.push({
-        id: `cloud-${list.id}`,
-        name: list.name,
-        tracks: unique,
-      });
-    notify(`已导入 ${unique.length} 首歌曲`);
-  } catch (error) {
-    notify((error as Error).message);
-  } finally {
-    busy.value = false;
-  }
-}
 async function logout() {
   await native('logout');
   await refreshAccount();
-  library.favorites = library.favorites.filter((track) => !!track.uri);
+  library.favorites = [];
   loggedIn.value = false;
-  cloud.value = [];
   status.value = '';
 }
 onMounted(() => {
@@ -292,24 +233,7 @@ onUnmounted(() => {
           <strong>{{ name }}</strong>
           <span class="vip-badge">{{ vipLabel }}</span>
         </div>
-        <button class="menu-item" :disabled="busy" @click="loadCloud">
-          读取云端歌单
-        </button>
-        <ContentTransition
-          :identity="busy ? 'loading' : cloud.length ? 'cloud' : 'empty'"
-        >
-          <p v-if="busy" class="muted" role="status">正在读取，请稍候…</p>
-          <button
-            v-for="list in cloud"
-            :key="list.id"
-            class="menu-item"
-            :disabled="busy"
-            @click="importCloud(list)"
-          >
-            {{ list.name }}
-            <span class="muted">导入</span>
-          </button>
-        </ContentTransition>
+        <button class="menu-item" @click="emit('playlists')">我的歌单</button>
         <button class="text-button danger" @click="logout">退出登录</button>
       </template>
       <template v-else-if="loginChoices.length">

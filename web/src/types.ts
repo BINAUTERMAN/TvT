@@ -31,11 +31,11 @@ export interface Playback {
   favoritePending?: boolean;
   quality?: string;
   interrupted?: boolean;
-}
-export interface Playlist {
-  id: string;
-  name: string;
-  tracks: Track[];
+  personalFm?: boolean;
+  fmStarting?: boolean;
+  fmBusy?: boolean;
+  fmWaiting?: boolean;
+  fmError?: string;
 }
 export interface LyricLine {
   time: number;

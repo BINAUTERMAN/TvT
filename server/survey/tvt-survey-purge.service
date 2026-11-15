@@ -1,0 +1,14 @@
+[Unit]
+Description=Purge expired TvT answers
+
+[Service]
+Type=oneshot
+User=tvt-survey
+Group=tvt-survey
+EnvironmentFile=/etc/tvt-survey.env
+ExecStart=/opt/tvt-node24/bin/node /opt/tvt-survey/server.mjs --purge
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tvt-survey

@@ -96,7 +96,21 @@ public final class StarChecks extends Instrumentation {
           "One-time marker persists across recreation",
           !((JSONObject) status.invoke(restarted)).getBoolean("eligible"));
       started.invoke(restarted, "selection-6");
-      check("Counting stops after display", saved.getInt("plays", 0) == 5 && broadcasts[0] == 1);
+      check("Disabled survey stops counting after Star threshold", saved.getInt("plays", 0) == 5 && broadcasts[0] == 1);
+      Method surveyStatus = method(type, "surveyStatus"), consumeSurvey = method(type, "consumeSurvey");
+      for (int index = 7; index <= 10; index++) started.invoke(restarted, "selection-" + index);
+      check("Ten starts do not invite survey", !((JSONObject) surveyStatus.invoke(restarted)).getBoolean("eligible"));
+      started.invoke(restarted, "selection-11");
+      started.invoke(restarted, "selection-11");
+      check("Disabled survey never invites at eleven starts", !((JSONObject) surveyStatus.invoke(restarted)).getBoolean("eligible") && broadcasts[0] == 1 && saved.getInt("plays", 0) == 5);
+      check("Disabled survey invitation cannot be claimed", Boolean.FALSE.equals(consumeSurvey.invoke(restarted)));
+      check("Disabled survey does not consume future invitation", !saved.contains("surveyShown"));
+      Object afterSurvey = constructor.newInstance(isolated);
+      check("Survey refusal marker persists", !((JSONObject) surveyStatus.invoke(afterSurvey)).getBoolean("eligible"));
+      started.invoke(afterSurvey, "selection-12");
+      check("Disabled survey never emits a second threshold event", saved.getInt("plays", 0) == 5 && broadcasts[0] == 1);
+      saved.edit().putInt("plays", 11).commit();
+      check("Upgrading an existing eligible install still hides survey", !((JSONObject) surveyStatus.invoke(afterSurvey)).getBoolean("eligible") && Boolean.FALSE.equals(consumeSurvey.invoke(afterSurvey)));
       String url = (String) method(type, "repositoryUrl").invoke(prompt);
       check(
           "Prompt opens the configured TvT repository",

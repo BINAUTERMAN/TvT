@@ -16,6 +16,9 @@ import org.json.*;
 public final class MainActivity extends Activity {
   private static final String ORIGIN = "https://appassets.androidplatform.net/";
   private WebView web;
+  private String pendingPlaylistImageRequest;
+  private String pendingPlaylistImageTarget;
+  private String pendingPlaylistImageAccount;
   private KugouApi api;
   private AppUpdater updates;
   private final BroadcastReceiver starReady =
@@ -40,7 +43,8 @@ public final class MainActivity extends Activity {
       };
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final ExecutorService workers = Executors.newFixedThreadPool(2);
-  private boolean visible;
+  private volatile boolean visible;
+  private volatile boolean importVisible;
   private boolean loaded;
   private boolean imeVisible;
   private boolean sentInitialState;
@@ -81,6 +85,19 @@ public final class MainActivity extends Activity {
           try {
             PlaybackService service = PlaybackService.instance;
             if (service == null) throw new Exception("播放服务恢复失败，请重新打开应用");
+            if (action.equals("fmVisualize")) {
+              if (data.optBoolean("enabled") && visible) {
+                service.fmLevelObserver = levels -> {
+                  if (!visible || !loaded) return;
+                  JSONArray values = new JSONArray();
+                  for (float level : levels) values.put((Object) Float.valueOf(level));
+                  javascript("window.dispatchEvent(new CustomEvent('ting:fm-levels',{detail:" + values + "}));");
+                };
+              } else {
+                service.detachFmVisualizer();
+                data.put("enabled", false);
+              }
+            }
             service.execute(action, data);
             resolve(id, true, null);
           } catch (Exception error) {
@@ -369,6 +386,9 @@ public final class MainActivity extends Activity {
         return;
       }
       if (java.util.Arrays.asList(
+                  "surveyStatus",
+                  "surveyConsume",
+                  "surveySubmit",
                   "search",
                   "qualityInfo",
                   "lyrics",
@@ -384,6 +404,8 @@ public final class MainActivity extends Activity {
                   "loginMobile",
                   "chooseLoginAccount",
                   "cancelMobileLogin",
+                  "cloudPlaylist",
+                  "importPlaylist",
                   "cloudPlaylists",
                   "playlist")
               .contains(action)
@@ -431,12 +453,22 @@ public final class MainActivity extends Activity {
                         });
                     return;
                   }
-                } else if (action.equals("search"))
+                } else if (action.equals("surveyStatus")) result = new SurveyFeedback(MainActivity.this).status();
+                else if (action.equals("surveyConsume")) result = new SurveyFeedback(MainActivity.this).consume();
+                else if (action.equals("surveySubmit")) result = new SurveyFeedback(MainActivity.this).submit(data);
+                else if (action.equals("search"))
                   result = api.search(data.optString("keyword"), data.optInt("page", 1));
                 else if (action.equals("lyrics")) result = api.lyrics(data);
                 else if (action.equals("lyricDocument")) result = api.lyricDocument(data);
-                else if (action.equals("account")) result = api.account();
+                else if (action.equals("account")) {
+                  result = api.account();
+                  refreshPlaybackAccount();
+                }
                 else if (action.equals("qualityInfo")) result = api.qualityInfo(data);
+                else if (action.equals("cloudPlaylist"))
+                  result = new CloudPlaylistRepository(api).execute(data.optString("operation"), data);
+                else if (action.equals("importPlaylist"))
+                  result = new PlaylistImporter(MainActivity.this, api, () -> visible && importVisible).execute(data.optString("operation"), data);
                 else if (action.equals("catalog"))
                   result =
                       api.catalog(
@@ -477,6 +509,7 @@ public final class MainActivity extends Activity {
                   result = api.checkinStep(data.optBoolean("manual", true));
                 else if (action.equals("logout")) {
                   api.logout();
+                  refreshPlaybackAccount();
                   result = true;
                 } else if (action.equals("qrKey")) result = api.qrKey();
                 else if (action.equals("qrCheck")) result = api.qrCheck(data.optString("key"));
@@ -581,6 +614,23 @@ public final class MainActivity extends Activity {
                           .addCategory(Intent.CATEGORY_OPENABLE)
                           .putExtra(Intent.EXTRA_TITLE, "TvT资料库.json"),
                       20);
+                } else if (action.equals("importUi")) {
+                  importVisible = new JSONObject(source).optBoolean("active");
+                } else if (action.equals("importPlaylistImage")) {
+                  if (pendingPlaylistImageRequest != null) throw new Exception("请先完成当前图片选择");
+                  pendingPlaylistImageRequest = id;
+                  pendingPlaylistImageTarget = new JSONObject(source).optString("target");
+                  pendingPlaylistImageAccount = api.accountToken();
+                  try {
+                    startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .setType("image/*").addCategory(Intent.CATEGORY_OPENABLE), 22);
+                  } catch (Exception exception) {
+                    pendingPlaylistImageRequest = null;
+                    pendingPlaylistImageTarget = null;
+                    pendingPlaylistImageAccount = null;
+                    throw exception;
+                  }
+                  return;
                 } else if (action.equals("importLibrary")) {
                   startActivityForResult(
                       new Intent(Intent.ACTION_OPEN_DOCUMENT)
@@ -611,6 +661,17 @@ public final class MainActivity extends Activity {
     }
   }
 
+  private void refreshPlaybackAccount() {
+    handler.post(() -> {
+      PlaybackService service = PlaybackService.instance;
+      if (service == null) return;
+      try {
+        service.execute("accountChanged", new JSONObject());
+      } catch (Exception ignored) {
+      }
+    });
+  }
+
   private String friendlyError(Exception error) {
     if (error instanceof javax.net.ssl.SSLException) return "登录服务的安全连接失败，请稍后重试";
     if (error instanceof org.json.JSONException) return "音乐服务返回异常，请稍后重试";
@@ -623,6 +684,32 @@ public final class MainActivity extends Activity {
   @Override
   protected void onActivityResult(int request, int result, Intent data) {
     super.onActivityResult(request, result, data);
+    if (request == 22) {
+      String requestId = pendingPlaylistImageRequest;
+      String target = pendingPlaylistImageTarget;
+      String expectedAccount = pendingPlaylistImageAccount;
+      pendingPlaylistImageRequest = null;
+      pendingPlaylistImageTarget = null;
+      pendingPlaylistImageAccount = null;
+      if (requestId == null) return;
+      if (result != RESULT_OK || data == null || data.getData() == null) {
+        resolve(requestId, null, "已取消选择截图");
+        return;
+      }
+      Uri uri = data.getData();
+      workers.execute(() -> {
+        try {
+          if (expectedAccount == null || !expectedAccount.equals(api.accountToken()))
+            throw new Exception("账号已变化，请重新选择截图和目标歌单");
+          String image = playlistImage(uri);
+          JSONObject response = new PlaylistImporter(MainActivity.this, api, () -> visible && importVisible).submitImage(target, image);
+          resolve(requestId, response, null);
+        } catch (Exception exception) {
+          resolve(requestId, null, friendlyError(exception));
+        }
+      });
+      return;
+    }
     if ((request == 20 || request == 21)
         && result == RESULT_OK
         && data != null
@@ -692,6 +779,36 @@ public final class MainActivity extends Activity {
           handler.post(
               () -> javascript("window.nativeImported&&window.nativeImported(" + tracks + ");"));
         });
+  }
+
+  private String playlistImage(Uri uri) throws Exception {
+    byte[] bytes;
+    try (InputStream input = getContentResolver().openInputStream(uri);
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      if (input == null) throw new IOException("无法读取截图");
+      byte[] chunk = new byte[8192];
+      int count;
+      while ((count = input.read(chunk)) != -1) {
+        if (output.size() + count > 12 * 1024 * 1024) throw new IOException("截图文件过大，请选择 12 MB 以内的图片");
+        output.write(chunk, 0, count);
+      }
+      bytes = output.toByteArray();
+    }
+    android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+    options.inJustDecodeBounds = true;
+    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+    if (options.outWidth <= 0 || options.outHeight <= 0) throw new IOException("无法识别截图格式");
+    options.inSampleSize = 1;
+    while (options.outWidth / options.inSampleSize > 1600 || options.outHeight / options.inSampleSize > 1600)
+      options.inSampleSize *= 2;
+    options.inJustDecodeBounds = false;
+    android.graphics.Bitmap image = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+    if (image == null) throw new IOException("无法解码截图，请换一张图片");
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      image.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, output);
+      if (output.size() > 2 * 1024 * 1024) throw new IOException("截图压缩后仍过大，请裁剪歌单区域后重试");
+      return java.util.Base64.getEncoder().encodeToString(output.toByteArray());
+    } finally { image.recycle(); }
   }
 
   private JSONObject readTrack(Uri uri) throws Exception {
@@ -788,6 +905,7 @@ public final class MainActivity extends Activity {
     handler.removeCallbacks(vipCheckin);
     if (PlaybackService.instance != null) {
       PlaybackService.instance.observer = null;
+      PlaybackService.instance.detachFmVisualizer();
       PlaybackService.instance.checkpoint();
     }
     if (web != null) {
@@ -812,6 +930,7 @@ public final class MainActivity extends Activity {
     workers.shutdownNow();
     if (PlaybackService.instance != null) {
       PlaybackService.instance.observer = null;
+      PlaybackService.instance.detachFmVisualizer();
       if (!PlaybackService.instance.snapshot().optBoolean("playing"))
         stopService(new Intent(this, PlaybackService.class));
     }

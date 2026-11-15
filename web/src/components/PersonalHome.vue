@@ -13,11 +13,16 @@ import { library, play, profile } from '../store';
 import Artwork from './Artwork.vue';
 import EntityGrid from './EntityGrid.vue';
 import ContentTransition from './ContentTransition.vue';
+import PersonalFmCard from './PersonalFmCard.vue';
+const props = withDefaults(defineProps<{ active?: boolean }>(), {
+  active: true,
+});
 const emit = defineEmits<{
   open: [entity: MusicEntity];
   menu: [track: Track];
   explore: [];
   account: [];
+  player: [];
 }>();
 const daily = ref<Track[]>([]);
 const recommendations = ref<Track[]>([]);
@@ -122,6 +127,11 @@ watch(
         </span>
         <ChevronRight :size="20" />
       </button>
+      <PersonalFmCard
+        :active="props.active"
+        @account="emit('account')"
+        @player="emit('player')"
+      />
       <section v-if="discoveryTracks.length" class="music-section">
         <div class="section-heading">
           <h2>为你推荐</h2>

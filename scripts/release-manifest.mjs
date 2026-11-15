@@ -5,6 +5,10 @@ import { createHash } from 'node:crypto';
 const manifest = fs.readFileSync('android/AndroidManifest.xml', 'utf8');
 const versionCode = Number(manifest.match(/android:versionCode="(\d+)"/)?.[1]);
 const versionName = manifest.match(/android:versionName="([^"]+)"/)?.[1];
+const { releaseTag } = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+const tag = releaseTag || versionName;
+if (typeof tag !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(tag))
+  throw new Error('发行标签无效');
 if (!versionCode || !/^\d+(?:\.\d+){1,3}(?:-[A-Za-z0-9.-]+)?$/.test(versionName ?? ''))
   throw new Error('版本信息无效');
 const original = process.argv[2];
@@ -24,7 +28,7 @@ fs.writeFileSync(
       schema: 1,
       versionCode,
       versionName,
-      tag: versionName,
+      tag,
       file,
       sha256,
       rollback: process.env.TING_ROLLBACK === 'true',

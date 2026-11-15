@@ -42,10 +42,6 @@ async function setup(page) {
       mode: 0,
       sleepAt: 0,
     };
-    localStorage.setItem(
-      'playlists',
-      JSON.stringify([{ id: 'saved', name: '本地测试歌单', tracks: [song] }]),
-    );
     window.Native = {
       request(id, action, source) {
         const payload = JSON.parse(source);
@@ -79,13 +75,36 @@ async function setup(page) {
             claimKnown: true,
             checkedAt: 1,
           };
-        if (action === 'cloudPlaylists') {
+        if (action === 'cloudPlaylist') {
           delay = 350;
-          result = {
-            data: {
-              info: [{ global_collection_id: 'cloud', name: '云端测试歌单' }],
-            },
-          };
+          result =
+            payload.operation === 'tracks'
+              ? {
+                  accountKey: 'motion',
+                  id: 'remote-0-1',
+                  listVersion: 1,
+                  tracks: [song],
+                  count: 1,
+                }
+              : {
+                  accountKey: 'motion',
+                  totalVersion: 1,
+                  playlists: [
+                    {
+                      id: 'remote-0-1',
+                      listId: '1',
+                      type: 0,
+                      name: '同步测试歌单',
+                      description: '',
+                      cover: '',
+                      count: 1,
+                      isDefault: false,
+                      sort: 1,
+                      version: 1,
+                      globalId: '1',
+                    },
+                  ],
+                };
         }
         if (action === 'lyricDocument')
           result = {
@@ -184,10 +203,15 @@ test('账号、设置、权益和云歌单使用连续过渡，离场按钮不�
       await moving(page, '.sheet-panel');
       await settle(page);
       await page
-        .getByRole('button', { name: '读取云端歌单', exact: true })
+        .getByRole('dialog')
+        .getByRole('button', { name: '我的歌单', exact: true })
         .click();
-      await page.getByRole('button', { name: '云端测试歌单 导入' }).waitFor();
-      await moving(page, '.account-panel .content-pane');
+      await moving(page, '.library-page');
+      await page
+        .getByRole('button', { name: '同步测试歌单 自建 · 1 首' })
+        .waitFor();
+      await settle(page);
+      await page.getByRole('button', { name: '账号与设置' }).click();
       await settle(page);
       await page.getByRole('button', { name: '概念版 VIP 与领取记录' }).click();
       await page.waitForFunction(
@@ -271,7 +295,9 @@ test('歌单、排行榜、搜索和资料库切换均有过渡且保留搜索�
       .getByRole('button', { name: '资料库', exact: true })
       .click();
     await settle(page);
-    await page.getByRole('button', { name: '本地测试歌单 1 首歌曲' }).click();
+    await page
+      .getByRole('button', { name: '同步测试歌单 自建 · 1 首' })
+      .click();
     await moving(page, '.library-page .content-pane');
     await settle(page);
     await page
