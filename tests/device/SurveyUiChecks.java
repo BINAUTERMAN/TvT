@@ -48,7 +48,7 @@ public final class SurveyUiChecks extends Instrumentation {
       js("window.dispatchEvent(new Event('ting:star-ready'));window.dispatchEvent(new Event('ting:resume'))");
       waitFor("!document.querySelector('.survey-preview-button,.survey-invitation,.survey-page')");
       js("document.querySelector('[aria-label=\"账号与设置\"]').click()");
-      waitFor("!!document.querySelector('.drawer')");
+      waitFor("!!document.querySelector('.sheet-panel')");
       js("[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='偏好设置')?.click()");
       waitFor("[...document.querySelectorAll('button')].some(el=>el.textContent.trim()==='应用更新')");
       if (!js("![...document.querySelectorAll('button')].some(el=>/问卷/.test(el.textContent))").equals("true")) throw new Exception("仍有问卷入口");
