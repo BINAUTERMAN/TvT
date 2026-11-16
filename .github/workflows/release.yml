@@ -47,7 +47,7 @@ jobs:
           if (!$env:KEYSTORE_BASE64 -or !$env:TING_SIGNING_PASSWORD) { throw 'Configure release signing secrets first' }
           New-Item -ItemType Directory -Force build | Out-Null
           [IO.File]::WriteAllBytes($env:TING_KEYSTORE_PATH, [Convert]::FromBase64String($env:KEYSTORE_BASE64))
-          & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" 'platforms;android-34' 'build-tools;34.0.0'
+          & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" 'platforms;android-34' 'build-tools;34.0.0' 'build-tools;36.0.0'
           if ($LASTEXITCODE -ne 0) { throw 'Android SDK setup failed' }
           $minimumSequence = [long]([xml](Get-Content android/AndroidManifest.xml -Raw)).manifest.GetAttribute('versionCode', 'http://schemas.android.com/apk/res/android')
           $sequence = [Math]::Max($minimumSequence, 100000 + [long]'${{ github.run_number }}')
@@ -73,6 +73,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Interface tests failed' }
             node scripts/test-login-protocol.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Protocol tests failed' }
+            ./scripts/test-network-safety.ps1
+            if ($LASTEXITCODE -ne 0) { throw 'Network safety tests failed' }
           } finally {
             Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
           }

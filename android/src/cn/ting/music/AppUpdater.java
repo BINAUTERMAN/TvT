@@ -231,7 +231,7 @@ final class AppUpdater {
   }
 
   private JSONObject fetch(String address, UpdateSource source) throws Exception {
-    HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
+    HttpURLConnection connection = AppHttp.open(new URL(address));
     connection.setConnectTimeout(12000);
     connection.setReadTimeout(20000);
     connection.setRequestProperty("Accept", "application/json");

@@ -75,7 +75,12 @@ try {
         resolve('build/test/survey-native/localhost.p12'),
       '-Djavax.net.ssl.trustStorePassword=tvt-test-only',
       '-cp',
-      ['build/test/survey-native', 'build/test/json.jar', androidJar].join(';'),
+      [
+        'build/test/survey-native',
+        'build/test/json.jar',
+        androidJar,
+        process.env.TVT_NATIVE_TEST_CLASSPATH,
+      ].join(';'),
       'cn.ting.music.SurveyHttpCheck',
       `https://127.0.0.1:${tls.address().port}`,
     ],

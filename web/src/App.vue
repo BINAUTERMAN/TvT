@@ -8,7 +8,6 @@ import {
   Library,
   Settings2,
   Heart,
-  FolderDown,
   Plus,
   Play,
   Pause,
@@ -16,13 +15,13 @@ import {
   ListMusic,
   Download,
   Moon,
-  Check,
 } from 'lucide-vue-next';
 import Artwork from './components/Artwork.vue';
 import AppDrawer from './components/AppDrawer.vue';
 import PlayerView from './components/PlayerView.vue';
 import LibraryView from './components/LibraryView.vue';
 import AccountPanel from './components/AccountPanel.vue';
+import PreferencesPanel from './components/PreferencesPanel.vue';
 import PersonalHome from './components/PersonalHome.vue';
 import ExploreView from './components/ExploreView.vue';
 import SearchView from './components/SearchView.vue';
@@ -64,7 +63,6 @@ import {
   preferences,
   refreshAccount,
   syncFavorites,
-  updatePreference,
   isLiked,
   cacheSong,
   cacheState,
@@ -141,11 +139,6 @@ const selected = ref<Track>();
 const collection = ref('');
 const equalizer = ref(false);
 const speed = ref('1');
-const themeOptions = [
-  { id: 'system', name: '跟随系统' },
-  { id: 'light', name: '浅色' },
-  { id: 'dark', name: '深色' },
-];
 const navigation = [
   { id: 'discover', name: '现在听', icon: AudioLines },
   { id: 'explore', name: '发现', icon: Compass },
@@ -280,7 +273,7 @@ function visibility() {
   pageVisible.value = !document.hidden;
   if (document.hidden) {
     dockObserver?.disconnect();
-    for (const animation of document.getAnimations()) {
+    for (const animation of document.getAnimations?.() ?? []) {
       if (animation.effect?.getComputedTiming().iterations === Infinity)
         animation.cancel();
       else animation.finish();
@@ -302,11 +295,15 @@ function resumed() {
     systemDark.value = window.tingSystemDark;
   updateAppearance();
 }
-function changePreference(event: Event, key: keyof typeof preferences) {
-  const input = event.target as HTMLInputElement;
-  const enabled = input.checked;
-  input.checked = preferences[key];
-  void updatePreference(key, enabled);
+function openPreferencePanel(
+  name: 'lyricsSettings' | 'notifications' | 'updates' | 'licenses',
+) {
+  if (name === 'notifications') void checkNotifications();
+  sheet.value = name;
+}
+function importLocalMusic() {
+  void command('import');
+  sheet.value = '';
 }
 function keydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
@@ -404,8 +401,8 @@ onUnmounted(() => {
         <Transition name="page" mode="out-in">
           <CatalogDetail
             v-if="details.length"
-            :key="`${details.at(-1)!.kind}:${details.at(-1)!.id}`"
-            :item="details.at(-1)!"
+            :key="`${details[details.length - 1]!.kind}:${details[details.length - 1]!.id}`"
+            :item="details[details.length - 1]!"
             @back="details.pop()"
             @open="openEntity"
             @menu="menu"
@@ -693,80 +690,12 @@ onUnmounted(() => {
         </label>
         <p class="muted">音效取决于设备支持情况。</p>
       </template>
-      <template v-if="sheet === 'settings'">
-        <h2>偏好设置</h2>
-        <h3>外观</h3>
-        <div class="theme-options">
-          <button
-            v-for="option in themeOptions"
-            :key="option.id"
-            :class="{ selected: library.theme === option.id }"
-            @click="library.theme = option.id"
-          >
-            {{ option.name }}
-            <Check v-if="library.theme === option.id" :size="15" />
-          </button>
-        </div>
-
-        <h3>播放与后台</h3>
-        <label
-          v-for="option in [
-            {
-              key: 'resumeOnLaunch' as const,
-              name: '重新打开时恢复上次播放',
-            },
-            { key: 'autoVip' as const, name: '打开应用时自动签到' },
-            { key: 'floatingLyrics' as const, name: '桌面歌词' },
-            { key: 'preloadAudio' as const, name: '预缓存后续歌曲' },
-          ]"
-          :key="option.key"
-          class="setting-row"
-        >
-          <span>{{ option.name }}</span>
-          <input
-            type="checkbox"
-            :checked="preferences[option.key]"
-            @change="changePreference($event, option.key)"
-          />
-        </label>
-        <p class="muted">桌面歌词支持大部分自定义内容。</p>
-        <button class="menu-item" @click="sheet = 'lyricsSettings'">
-          桌面歌词设置
-        </button>
-        <button
-          class="menu-item"
-          @click="
-            checkNotifications();
-            sheet = 'notifications';
-          "
-        >
-          锁屏与悬浮通知
-        </button>
-        <h3>音乐与存储</h3>
-        <button class="menu-item" @click="openCache">管理歌曲缓存</button>
-        <button
-          class="menu-item"
-          @click="
-            command('import');
-            sheet = '';
-          "
-        >
-          <FolderDown :size="20" />
-          导入本地音乐
-        </button>
-        <h3>关于TvT</h3>
-        <button class="menu-item" @click="sheet = 'updates'">应用更新</button>
-        <button class="text-button" @click="sheet = 'licenses'">
-          开源许可
-        </button>
-        <p class="muted">
-          {{ updates.currentVersion }} · 安卓版
-          <br />
-          无广告 SDK，无用户行为分析。
-          <br />
-          GPL-2.0-only · 非酷狗官方应用。
-        </p>
-      </template>
+      <PreferencesPanel
+        v-if="sheet === 'settings'"
+        @open="openPreferencePanel"
+        @cache="openCache"
+        @import="importLocalMusic"
+      />
       <template v-if="sheet === 'account'">
         <AccountPanel
           @playlists="

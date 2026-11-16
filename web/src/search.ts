@@ -8,7 +8,9 @@ export interface Suggestion {
   heat: number;
 }
 function heat(value: unknown): number {
-  const text = String(value ?? '').replaceAll(',', '');
+  const text = String(value ?? '')
+    .split(',')
+    .join('');
   const numeric = Number.parseFloat(text) || 0;
   return numeric * (text.includes('亿') ? 1e8 : text.includes('万') ? 1e4 : 1);
 }

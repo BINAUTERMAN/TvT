@@ -216,12 +216,16 @@ public final class KugouApi {
         String url = songUrl(new JSONObject(track.toString()).put("quality", quality), resource);
         return new JSONObject().put("url", url).put("quality", quality);
       } catch (Exception error) {
-        if (error instanceof java.io.IOException || error.getMessage().contains("安全验证"))
+        if (stopsQualityFallback(error))
           throw error;
         last = error;
       }
     }
     throw last;
+  }
+
+  static boolean stopsQualityFallback(Exception error) {
+    return error instanceof java.io.IOException || String.valueOf(error.getMessage()).contains("安全验证");
   }
 
   private String songUrl(JSONObject track, JSONObject resource) throws Exception {
@@ -835,7 +839,7 @@ public final class KugouApi {
           .append(URLEncoder.encode(entry.getValue(), "UTF-8"))
           .append('&');
     }
-    HttpURLConnection connection = (HttpURLConnection) new URL(address.toString()).openConnection();
+    HttpURLConnection connection = AppHttp.open(new URL(address.toString()));
     connection.setConnectTimeout(12000);
     connection.setReadTimeout(15000);
     connection.setRequestProperty(

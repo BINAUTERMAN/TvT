@@ -3,6 +3,7 @@ import gpl from '../../public/licenses/GPL-2.0.txt?raw';
 import apiLicense from '../../public/licenses/KuGouMusicApi.txt?raw';
 import dependencies from '../../public/licenses/ThirdParty.txt?raw';
 import airLyrics from '../../public/licenses/AirLyrics.txt?raw';
+import nativeLibraries from '../../public/licenses/NativeLibraries.txt?raw';
 </script>
 <template>
   <h2>开源许可</h2>
@@ -25,5 +26,9 @@ import airLyrics from '../../public/licenses/AirLyrics.txt?raw';
   <details>
     <summary>AirLyrics · MIT</summary>
     <pre class="license-text">{{ airLyrics }}</pre>
+  </details>
+  <details>
+    <summary>原生网络依赖 · Apache-2.0</summary>
+    <pre class="license-text">{{ nativeLibraries }}</pre>
   </details>
 </template>

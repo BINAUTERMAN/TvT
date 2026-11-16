@@ -152,7 +152,8 @@ export async function refreshAccount() {
   Object.assign(profile, result);
   profile.avatar = (result.avatar || '')
     .replace('http:', 'https:')
-    .replaceAll('{size}', '100');
+    .split('{size}')
+    .join('100');
   if (changed) {
     library.favorites = [];
     invalidateCatalog();

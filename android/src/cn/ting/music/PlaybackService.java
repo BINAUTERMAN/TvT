@@ -11,7 +11,7 @@ import java.util.concurrent.*;
 import org.json.*;
 
 public final class PlaybackService extends Service {
-  public static PlaybackService instance;
+  public static volatile PlaybackService instance;
 
   public interface Observer {
     void changed(JSONObject state);
@@ -32,11 +32,13 @@ public final class PlaybackService extends Service {
   private final LocalBinder binder = new LocalBinder();
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final ExecutorService network = Executors.newSingleThreadExecutor();
+  private final ExecutorService lyricNetwork = Executors.newSingleThreadExecutor();
   private final ExecutorService favoriteWork = Executors.newSingleThreadExecutor();
   private final ExecutorService fmNetwork = new ThreadPoolExecutor(
       0, 1, 15, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
   private final PersonalFmSession fm = new PersonalFmSession();
   private MediaPlayer media;
+  private NetworkMediaSource mediaSource;
   private VolumeShaper envelope;
   private boolean fadingOut;
   private final Runnable finishFade = () -> completeFade();
@@ -117,6 +119,7 @@ public final class PlaybackService extends Service {
   @Override
   public void onCreate() {
     super.onCreate();
+    AppHttp.initialize(this);
     instance = this;
     notificationIcon = NotificationIcons.status(this);
     api = new KugouApi(this);
@@ -677,10 +680,16 @@ public final class PlaybackService extends Service {
               }
             }
             final String address = uri;
+            final NetworkMediaSource source = address.startsWith("https://") || address.startsWith("http://")
+                ? new NetworkMediaSource(address) : null;
             handler.post(
                 () -> {
-                  if (token != generation) return;
+                  if (token != generation || destroyed) {
+                    if (source != null) source.close();
+                    return;
+                  }
                   try {
+                    mediaSource = source;
                     media = new MediaPlayer();
                     media.setAudioAttributes(
                         new AudioAttributes.Builder()
@@ -690,6 +699,7 @@ public final class PlaybackService extends Service {
                     media.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
                     media.setOnInfoListener(
                         (player, what, extra) -> {
+                          if (!ownsPlayer(player, token)) return true;
                           if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
                             fmVisualizer.close();
                             playbackBuffer.stop();
@@ -703,10 +713,14 @@ public final class PlaybackService extends Service {
                           }
                           return false;
                         });
-                    media.setDataSource(this, Uri.parse(address));
-                    media.setOnSeekCompleteListener(player -> updateFloatingLyrics());
+                    if (source == null) media.setDataSource(this, Uri.parse(address));
+                    else media.setDataSource(source);
+                    media.setOnSeekCompleteListener(player -> {
+                      if (ownsPlayer(player, token)) updateFloatingLyrics();
+                    });
                     media.setOnPreparedListener(
                         player -> {
+                          if (!ownsPlayer(player, token)) return;
                           prepared = true;
                           loading = false;
                           if (startPosition > 0)
@@ -730,6 +744,7 @@ public final class PlaybackService extends Service {
                         });
                     media.setOnCompletionListener(
                         player -> {
+                          if (!ownsPlayer(player, token)) return;
                           if (fm.active) next(false);
                           else if (mode == 1) {
                             player.seekTo(0);
@@ -741,6 +756,7 @@ public final class PlaybackService extends Service {
                         });
                     media.setOnErrorListener(
                         (player, what, extra) -> {
+                          if (!ownsPlayer(player, token)) return true;
                           fail("音频加载失败，请重试或切换歌曲");
                           return true;
                         });
@@ -769,6 +785,10 @@ public final class PlaybackService extends Service {
     showNotification();
     emit();
     error = "";
+  }
+
+  private boolean ownsPlayer(MediaPlayer player, int token) {
+    return !destroyed && token == generation && player != null && media == player;
   }
 
   private void toggleToPlay() {
@@ -1220,7 +1240,7 @@ public final class PlaybackService extends Service {
     floatingLyrics.show(item.optString("title"));
     String id = item.optString("id");
     int token = generation;
-    network.execute(
+    lyricNetwork.execute(
         () -> {
           try {
             JSONObject document = api.lyricDocument(item);
@@ -1333,6 +1353,10 @@ public final class PlaybackService extends Service {
   }
 
   private void releaseMedia() {
+    if (mediaSource != null) {
+      mediaSource.close();
+      mediaSource = null;
+    }
     if (fmVisualizer != null) fmVisualizer.close();
     if (statusBarLyrics != null) statusBarLyrics.hide();
     lyricBuffering = false;
@@ -1381,6 +1405,7 @@ public final class PlaybackService extends Service {
     fmVisualizer.close();
     handler.removeCallbacksAndMessages(null);
     network.shutdownNow();
+    lyricNetwork.shutdownNow();
     favoriteWork.shutdownNow();
     fmNetwork.shutdownNow();
     playbackBuffer.close();

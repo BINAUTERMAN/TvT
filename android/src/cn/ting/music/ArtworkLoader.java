@@ -23,7 +23,7 @@ final class ArtworkLoader {
   private final LruCache<String, Bitmap> cache = new LruCache<>(4);
 
   void load(String source, Callback callback) {
-    if (source.isEmpty()) return;
+    if (source == null || source.isEmpty()) return;
     String address = source.replace("{size}", "400").replaceFirst("^http:", "https:");
     Bitmap cached = cache.get(address);
     if (cached != null) {
@@ -35,7 +35,7 @@ final class ArtworkLoader {
           try {
             URL url = new URL(address);
             if (!url.getProtocol().equals("https") || !url.getHost().endsWith(".kugou.com")) return;
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpURLConnection connection = AppHttp.open(url);
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(8000);
             try (InputStream input = connection.getInputStream();

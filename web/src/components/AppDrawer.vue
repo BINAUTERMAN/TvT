@@ -26,7 +26,10 @@ function restore(element: Element) {
         <section
           :key="name"
           class="sheet-panel"
-          :class="{ 'survey-invite-panel': name === 'surveyInvite' }"
+          :class="{
+            'survey-invite-panel': name === 'surveyInvite',
+            'settings-panel': name === 'settings',
+          }"
           role="dialog"
           aria-modal="true"
           :aria-label="name"
@@ -50,5 +53,11 @@ function restore(element: Element) {
 <style scoped>
 .sheet-panel.survey-invite-panel {
   padding: 26px 20px 18px;
+}
+@media (min-width: 700px) {
+  .sheet-panel.settings-panel {
+    width: 800px;
+    padding: 32px;
+  }
 }
 </style>

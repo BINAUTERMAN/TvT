@@ -6,7 +6,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import javax.net.ssl.HttpsURLConnection;
+import java.net.HttpURLConnection;
 import org.json.JSONObject;
 
 final class SurveyFeedback {
@@ -52,7 +52,7 @@ final class SurveyFeedback {
   }
 
   static JSONObject post(URL target, JSONObject data) throws Exception {
-    HttpsURLConnection connection = (HttpsURLConnection) target.openConnection();
+    HttpURLConnection connection = AppHttp.open(target);
     try {
       connection.setConnectTimeout(10000);
       connection.setReadTimeout(15000);

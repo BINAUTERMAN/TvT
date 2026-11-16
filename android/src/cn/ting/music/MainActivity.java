@@ -42,8 +42,11 @@ public final class MainActivity extends Activity {
         }
       };
   private final Handler handler = new Handler(Looper.getMainLooper());
-  private final ExecutorService workers = Executors.newFixedThreadPool(2);
+  private final RequestWorkers workers = new RequestWorkers();
+  private final java.util.concurrent.atomic.AtomicBoolean checkinPending =
+      new java.util.concurrent.atomic.AtomicBoolean();
   private volatile boolean visible;
+  private volatile int accountGeneration;
   private volatile boolean importVisible;
   private boolean loaded;
   private boolean imeVisible;
@@ -141,18 +144,22 @@ public final class MainActivity extends Activity {
   /** 前台签到节奏：只在前台推进，进入后台立即取消，不创建后台任务或唤醒锁。 */
   private final Runnable vipCheckin =
       () -> {
-        if (!visible) return;
-        workers.execute(
+        if (!visible || !checkinPending.compareAndSet(false, true)) return;
+        workers.execute("checkinStep",
             () -> {
               JSONObject state;
+              int generation = accountGeneration;
               try {
+                if (!visible) return;
                 state = api.checkinStep(false);
               } catch (Exception error) {
                 return;
+              } finally {
+                checkinPending.set(false);
               }
               handler.post(
                   () -> {
-                    if (!visible) return;
+                    if (!visible || generation != accountGeneration) return;
                     javascript(
                         "window.dispatchEvent(new CustomEvent('ting:checkin',{detail:"
                             + state
@@ -178,6 +185,7 @@ public final class MainActivity extends Activity {
   @Override
   public void onCreate(Bundle saved) {
     super.onCreate(saved);
+    AppHttp.initialize(this);
     api = new KugouApi(this);
     if (Build.VERSION.SDK_INT >= 33)
       registerReceiver(
@@ -237,7 +245,7 @@ public final class MainActivity extends Activity {
           public WebResourceResponse shouldInterceptRequest(
               WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
-            if (!uri.toString().startsWith(ORIGIN)) return null;
+            if (!uri.toString().startsWith(ORIGIN)) return remoteResource(request);
             String path = uri.getPath();
             if (path == null || path.contains("..")) return emptyResponse();
             if (path.equals("/")) path = "/index.html";
@@ -316,8 +324,38 @@ public final class MainActivity extends Activity {
     return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
   }
 
+  private WebResourceResponse remoteResource(WebResourceRequest request) {
+    if (!"https".equals(request.getUrl().getScheme()) || !"GET".equals(request.getMethod()))
+      return emptyResponse();
+    java.net.HttpURLConnection connection = null;
+    try {
+      connection = AppHttp.open(new java.net.URL(request.getUrl().toString()));
+      connection.setConnectTimeout(8000);
+      connection.setReadTimeout(8000);
+      for (String header : new String[] {"Accept", "User-Agent", "Range"}) {
+        String value = request.getRequestHeaders().get(header);
+        if (value != null) connection.setRequestProperty(header, value);
+      }
+      int status = connection.getResponseCode();
+      String contentType = connection.getContentType();
+      String mime = contentType == null ? "application/octet-stream" : contentType.split(";")[0];
+      final java.net.HttpURLConnection active = connection;
+      InputStream input = status >= 400 ? active.getErrorStream() : active.getInputStream();
+      if (input == null) { active.disconnect(); return emptyResponse(); }
+      return new WebResourceResponse(mime, null, status, status < 400 ? "OK" : "Unavailable",
+          java.util.Collections.emptyMap(), new FilterInputStream(input) {
+            @Override public void close() throws IOException {
+              try { super.close(); } finally { active.disconnect(); }
+            }
+          });
+    } catch (IOException error) {
+      if (connection != null) connection.disconnect();
+      return emptyResponse();
+    }
+  }
+
   private void javascript(String script) {
-    if (!isFinishing() && !isDestroyed()) web.evaluateJavascript(script, null);
+    if (web != null && !isFinishing() && !isDestroyed()) web.evaluateJavascript(script, null);
   }
 
   private void resolve(String id, Object result, String error) {
@@ -425,7 +463,7 @@ public final class MainActivity extends Activity {
                   "updateInstall",
                   "updateReleases")
               .contains(action)) {
-        workers.execute(
+        workers.execute(action,
             () -> {
               try {
                 JSONObject data = new JSONObject(source);
@@ -485,8 +523,10 @@ public final class MainActivity extends Activity {
                               "liked",
                               api.setFavorite(
                                   data.getJSONObject("track"), data.optBoolean("liked")));
-                  if (PlaybackService.instance != null)
-                    handler.post(() -> PlaybackService.instance.refreshFavoriteState());
+                  handler.post(() -> {
+                    PlaybackService player = PlaybackService.instance;
+                    if (player != null) player.refreshFavoriteState();
+                  });
                 } else if (action.equals("settings")) {
                   result = api.settings(data);
                   if (data.has("preloadAudio"))
@@ -509,17 +549,30 @@ public final class MainActivity extends Activity {
                   result = api.checkinStep(data.optBoolean("manual", true));
                 else if (action.equals("logout")) {
                   api.logout();
+                  accountGeneration++;
                   refreshPlaybackAccount();
                   result = true;
                 } else if (action.equals("qrKey")) result = api.qrKey();
-                else if (action.equals("qrCheck")) result = api.qrCheck(data.optString("key"));
+                else if (action.equals("qrCheck")) {
+                  result = api.qrCheck(data.optString("key"));
+                  if (((JSONObject) result).getJSONObject("data").optInt("status") == 4) {
+                    accountGeneration++;
+                    handler.post(MainActivity.this::startVipCheckin);
+                  }
+                }
                 else if (action.equals("sendCode")) result = api.sendCode(data.optString("mobile"));
                 else if (action.equals("loginMobile")) {
                   result = api.loginMobile(data.optString("mobile"), data.optString("code"));
-                  handler.post(MainActivity.this::startVipCheckin);
+                  if (((JSONObject) result).optBoolean("loggedIn")) {
+                    accountGeneration++;
+                    handler.post(MainActivity.this::startVipCheckin);
+                  }
                 } else if (action.equals("chooseLoginAccount")) {
                   result = api.chooseLoginAccount(data.optString("key"));
-                  handler.post(MainActivity.this::startVipCheckin);
+                  if (((JSONObject) result).optBoolean("loggedIn")) {
+                    accountGeneration++;
+                    handler.post(MainActivity.this::startVipCheckin);
+                  }
                 } else if (action.equals("cancelMobileLogin")) {
                   api.cancelMobileLogin();
                   result = true;

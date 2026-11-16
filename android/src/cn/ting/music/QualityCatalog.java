@@ -19,6 +19,7 @@ final class QualityCatalog {
   }
 
   static JSONObject entry(JSONObject resource, String quality) {
+    if (resource == null) return null;
     JSONArray related = resource.optJSONArray("relate_goods");
     JSONObject fallback = null;
     if (related != null)
@@ -34,6 +35,7 @@ final class QualityCatalog {
   }
 
   static String hash(JSONObject resource, String quality) {
+    if (resource == null) return "";
     JSONObject trans = resource.optJSONObject("trans_param");
     if (trans != null && (quality.equals("128") || quality.equals("320"))) {
       String ogg = trans.optString("ogg_" + quality + "_hash");
@@ -42,8 +44,8 @@ final class QualityCatalog {
     JSONObject item = entry(resource, quality);
     if (item == null) return "";
     String hash = item.optString("hash");
-    if (hash.isEmpty() && item.optJSONObject("info") != null)
-      hash = item.optJSONObject("info").optString("hash");
+    JSONObject info = item.optJSONObject("info");
+    if (hash.isEmpty() && info != null) hash = info.optString("hash");
     return hash.toLowerCase(java.util.Locale.ROOT);
   }
 
@@ -54,7 +56,7 @@ final class QualityCatalog {
       JSONObject item = entry(resource, quality);
       boolean exists = !hash(resource, quality).isEmpty();
       JSONObject info = item == null ? null : item.optJSONObject("info");
-      JSONObject trans = resource.optJSONObject("trans_param");
+      JSONObject trans = resource == null ? null : resource.optJSONObject("trans_param");
       long size = info == null ? 0 : info.optLong("filesize");
       if (trans != null && (quality.equals("128") || quality.equals("320")))
         size = trans.optLong("ogg_" + quality + "_filesize", size);

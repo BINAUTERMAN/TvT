@@ -24,11 +24,15 @@ public final class DeviceSmoke extends Instrumentation {
   private Method snapshot;
   private File tone;
   private JSONObject previousState;
+  private boolean playbackOnly;
+  private boolean online;
   private final JSONArray checks = new JSONArray();
 
   @Override
   public void onCreate(Bundle arguments) {
     super.onCreate(arguments);
+    playbackOnly = arguments != null && "true".equals(arguments.getString("playbackOnly"));
+    online = arguments != null && "true".equals(arguments.getString("online"));
     start();
   }
 
@@ -171,35 +175,37 @@ public final class DeviceSmoke extends Instrumentation {
       snapshot = type.getMethod("snapshot");
       previousState = state();
       check("Application and native service started", service != null);
-      javax.net.ssl.HttpsURLConnection login =
-          (javax.net.ssl.HttpsURLConnection)
-              new java.net.URL("https://login-user.kugou.com/v7/send_mobile_code").openConnection();
-      login.setRequestMethod("HEAD");
-      login.setConnectTimeout(12000);
-      login.setReadTimeout(12000);
-      try {
-        check("Login TLS hostname verified without sending SMS", login.getResponseCode() == 200);
-      } finally {
-        login.disconnect();
-      }
-      check(
-          "Web UI rendered",
-          "true".equals(javascript("!!document.querySelector('h1')?.textContent")));
-      for (int attempt = 0; attempt < 50; attempt++) {
-        if ("true"
-            .equals(
-                javascript(
-                    "[...document.querySelectorAll('.recommend-grid .artwork"
-                        + " img')].some(image=>image.complete&&image.naturalWidth>0)"))) break;
-        SystemClock.sleep(250);
-      }
-      check(
-          "Personal recommendation album artwork loaded on device",
-          "true"
+      if (!playbackOnly) {
+        javax.net.ssl.HttpsURLConnection login =
+            (javax.net.ssl.HttpsURLConnection)
+                new java.net.URL("https://login-user.kugou.com/v7/send_mobile_code").openConnection();
+        login.setRequestMethod("HEAD");
+        login.setConnectTimeout(12000);
+        login.setReadTimeout(12000);
+        try {
+          check("Login TLS hostname verified without sending SMS", login.getResponseCode() == 200);
+        } finally {
+          login.disconnect();
+        }
+        check(
+            "Web UI rendered",
+            "true".equals(javascript("!!document.querySelector('h1')?.textContent")));
+        for (int attempt = 0; attempt < 50; attempt++) {
+          if ("true"
               .equals(
                   javascript(
                       "[...document.querySelectorAll('.recommend-grid .artwork"
-                          + " img')].some(image=>image.complete&&image.naturalWidth>0)")));
+                          + " img')].some(image=>image.complete&&image.naturalWidth>0)"))) break;
+          SystemClock.sleep(250);
+        }
+        check(
+            "Personal recommendation album artwork loaded on device",
+            "true"
+                .equals(
+                    javascript(
+                        "[...document.querySelectorAll('.recommend-grid .artwork"
+                            + " img')].some(image=>image.complete&&image.naturalWidth>0)")));
+      }
       createTone();
       JSONObject track =
           new JSONObject()
@@ -211,8 +217,14 @@ public final class DeviceSmoke extends Instrumentation {
               .put("hash", "")
               .put("uri", tone.toURI().toString());
       command("play", new JSONObject().put("tracks", new JSONArray().put(track)).put("index", 0));
-      for (int attempt = 0; attempt < 30 && !state().optBoolean("playing"); attempt++)
+      for (int attempt = 0; attempt < 200 && !state().optBoolean("playing"); attempt++)
         SystemClock.sleep(200);
+      if (!state().optBoolean("playing")) {
+        Bundle diagnostic = new Bundle();
+        diagnostic.putString("stream", "PLAYBACK_DIAGNOSTIC loading=" + state().optBoolean("loading")
+            + " prepared=" + field(service, "prepared") + " mediaPresent=" + (field(service, "media") != null) + "\n");
+        sendStatus(0, diagnostic);
+      }
       check("Native local audio playback", state().optBoolean("playing"));
       command("pause", new JSONObject());
       SystemClock.sleep(650);
@@ -238,8 +250,15 @@ public final class DeviceSmoke extends Instrumentation {
       check(
           "Playback recovers through bridge after service recreation",
           state().optBoolean("playing"));
+      for (int attempt = 0; attempt < 80; attempt++) {
+        if ("true".equals(javascript("document.querySelector('.mini-info')?.textContent.includes('设备验证音频')"))) break;
+        SystemClock.sleep(100);
+      }
       javascript("document.querySelector('.mini-info')?.click()");
-      SystemClock.sleep(600);
+      for (int attempt = 0; attempt < 50; attempt++) {
+        if ("true".equals(javascript("document.querySelector('.player-screen')?.textContent.includes('设备验证音频')"))) break;
+        SystemClock.sleep(100);
+      }
       check(
           "Now-playing UI received real native state",
           "true"
@@ -299,6 +318,51 @@ public final class DeviceSmoke extends Instrumentation {
       command("sleep", new JSONObject().put("minutes", 0));
       command("remove", new JSONObject().put("index", 0));
       JSONArray originalQueue = previousState.getJSONArray("queue");
+      if (online) {
+        Class<?> apiType = activity.getClassLoader().loadClass("cn.ting.music.KugouApi");
+        Object api = apiType.getConstructor(Context.class).newInstance(getTargetContext());
+        JSONObject response = (JSONObject) apiType.getMethod("search", String.class, int.class).invoke(api, "纯音乐", 1);
+        JSONObject song = response.getJSONObject("data").getJSONArray("lists").getJSONObject(0);
+        JSONObject trackOnline = new JSONObject().put("id", "device-online-compatibility")
+            .put("title", "在线兼容验证").put("artist", "设备测试").put("cover", "")
+            .put("hash", song.getString("FileHash")).put("albumId", song.optString("AlbumID", "0"))
+            .put("audioId", song.optString("MixSongID", "0"));
+        java.util.concurrent.atomic.AtomicReference<String> failure = new java.util.concurrent.atomic.AtomicReference<>("");
+        Class<?> observerType = service.getClass().getClassLoader().loadClass("cn.ting.music.PlaybackService$Observer");
+        Field observer = service.getClass().getField("observer");
+        Object previousObserver = observer.get(service);
+        Object capture = java.lang.reflect.Proxy.newProxyInstance(observerType.getClassLoader(), new Class<?>[] {observerType},
+            (proxy, callback, values) -> {
+              if (values != null && values.length == 1 && values[0] instanceof JSONObject) {
+                String error = ((JSONObject) values[0]).optString("error");
+                if (!error.isEmpty()) failure.set(error);
+                if (previousObserver != null) callback.invoke(previousObserver, values);
+              }
+              return null;
+            });
+        runOnMainSync(() -> {
+          try { observer.set(service, capture); } catch (Exception error) { throw new RuntimeException(error); }
+        });
+        try {
+        command("play", new JSONObject().put("tracks", new JSONArray().put(trackOnline)).put("index", 0));
+        for (int attempt = 0; attempt < 180 && !state().optBoolean("playing") && failure.get().isEmpty(); attempt++) SystemClock.sleep(250);
+        if (!failure.get().isEmpty()) {
+          Bundle diagnostic = new Bundle();
+          diagnostic.putString("stream", "ONLINE_REQUEST_FAILURE: " + failure.get().replaceAll("https?://[^ ]+", "[地址省略]") + "\n");
+          sendStatus(0, diagnostic);
+        }
+        check("Real online resolution and Android MediaPlayer playback", state().optBoolean("playing"));
+        double onlineBefore = state().optDouble("position");
+        SystemClock.sleep(2300);
+        check("Real online audio position advances", state().optDouble("position") > onlineBefore + 1.5);
+        command("pause", new JSONObject());
+        SystemClock.sleep(650);
+        } finally {
+          runOnMainSync(() -> {
+            try { observer.set(service, previousObserver); } catch (Exception error) { throw new RuntimeException(error); }
+          });
+        }
+      }
       if (originalQueue.length() > 0
           && !originalQueue
               .getJSONObject(previousState.optInt("index"))
@@ -375,6 +439,6 @@ public final class DeviceSmoke extends Instrumentation {
           }
         });
     javascript(
-        "localStorage.setItem('history',JSON.stringify(JSON.parse(localStorage.getItem('history')||'[]').filter(track=>track.id!=='device-smoke-test')))");
+        "localStorage.setItem('history',JSON.stringify(JSON.parse(localStorage.getItem('history')||'[]').filter(track=>track.id!=='device-smoke-test'&&track.id!=='device-online-compatibility')))");
   }
 }

@@ -7,17 +7,17 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
-test('更新清单保留 5.5 版本号与独立的 5.5v 发行标签', async () => {
+test('更新清单保留 5.6 版本号与独立的 5.6v 发行标签', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tvt-release-'));
   try {
     await mkdir(join(root, 'android'));
     await writeFile(
       join(root, 'android/AndroidManifest.xml'),
-      '<manifest android:versionCode="100007" android:versionName="5.5" />',
+      '<manifest android:versionCode="100008" android:versionName="5.6" />',
     );
     await writeFile(
       join(root, 'package.json'),
-      JSON.stringify({ releaseTag: '5.5v' }),
+      JSON.stringify({ releaseTag: '5.6v' }),
     );
     const apk = Buffer.from('release manifest fixture; not an installable APK');
     await writeFile(join(root, 'fixture.apk'), apk);
@@ -38,9 +38,9 @@ test('更新清单保留 5.5 版本号与独立的 5.5v 发行标签', async () 
         'utf8',
       ),
     );
-    assert.equal(manifest.versionName, '5.5');
-    assert.equal(manifest.tag, '5.5v');
-    assert.equal(manifest.file, 'TvT-5.5.apk');
+    assert.equal(manifest.versionName, '5.6');
+    assert.equal(manifest.tag, '5.6v');
+    assert.equal(manifest.file, 'TvT-5.6.apk');
     assert.equal(
       manifest.sha256,
       createHash('sha256').update(apk).digest('hex'),

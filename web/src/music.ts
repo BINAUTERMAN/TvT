@@ -89,7 +89,8 @@ export function normalize(raw: Raw): Track {
       ]
         .filter((value): value is string => typeof value === 'string')
         .find((value) => /^https?:\/\//.test(value))
-        ?.replaceAll('{size}', '400')
+        ?.split('{size}')
+        .join('400')
         .replace('http:', 'https:') ?? '',
     albumId: text(
       info.AlbumID ?? info.album_id ?? raw.album_id ?? albumInfo.album_id,

@@ -210,7 +210,7 @@ final class PlaybackBuffer implements AutoCloseable {
         available = Math.min(MAX_FILE_BYTES, MAX_TOTAL_BYTES - used);
         if (available <= 0) throw new IOException("预缓存空间已满");
       }
-      request = (HttpURLConnection) url.openConnection();
+      request = AppHttp.open(url);
       request.setConnectTimeout(8000);
       request.setReadTimeout(8000);
       request.setInstanceFollowRedirects(false);

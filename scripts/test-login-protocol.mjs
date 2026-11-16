@@ -55,7 +55,8 @@ const java = process.env.JAVA_HOME
   ? path.join(process.env.JAVA_HOME, 'bin')
   : path.join(process.env.USERPROFILE, '.jdks/jbr-17.0.14/bin');
 const androidJar = path.join(
-  process.env.ANDROID_HOME ?? path.join(process.env.LOCALAPPDATA, 'Android/Sdk'),
+  process.env.ANDROID_HOME ??
+    path.join(process.env.LOCALAPPDATA, 'Android/Sdk'),
   'platforms/android-34/android.jar',
 );
 if (!fs.existsSync('build/test/json.jar')) {
@@ -63,14 +64,33 @@ if (!fs.existsSync('build/test/json.jar')) {
     'https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar',
   );
   if (!response.ok) throw new Error('原生协议测试依赖下载失败');
-  fs.writeFileSync('build/test/json.jar', Buffer.from(await response.arrayBuffer()));
+  fs.writeFileSync(
+    'build/test/json.jar',
+    Buffer.from(await response.arrayBuffer()),
+  );
 }
-const cp = `build/test/json.jar;${androidJar}`;
+const nativeJars = execFileSync(
+  'powershell',
+  [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    'scripts/native-dependencies.ps1',
+  ],
+  { encoding: 'utf8' },
+)
+  .trim()
+  .split(/\r?\n/)
+  .join(';');
+const cp = `build/test/json.jar;${androidJar};${nativeJars}`;
 execFileSync(
   path.join(java, 'javac.exe'),
   [
     '-encoding',
     'UTF-8',
+    '-sourcepath',
+    'android/src',
     '-cp',
     cp,
     '-d',

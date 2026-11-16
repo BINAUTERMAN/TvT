@@ -1,16 +1,25 @@
 ﻿$ErrorActionPreference = 'Stop'
 $workspacePath = Split-Path -Parent $PSScriptRoot
 Set-Location $workspacePath
-$versionName = ([xml](Get-Content android/AndroidManifest.xml -Raw)).manifest.GetAttribute('versionName', 'http://schemas.android.com/apk/res/android')
+$manifest = [xml](Get-Content android/AndroidManifest.xml -Raw)
+$androidNamespace = 'http://schemas.android.com/apk/res/android'
+$versionName = $manifest.manifest.GetAttribute('versionName', $androidNamespace)
+$minSdk = $manifest.manifest.'uses-sdk'.GetAttribute('minSdkVersion', $androidNamespace)
+if ($minSdk -ne '26') { throw '最低支持版本应为 Android 8.0（API 26），请同步审核原生 API 和界面兼容性' }
+$gradleConfig = Get-Content android/build.gradle -Raw
+if ($gradleConfig -notmatch "minSdk\s+$minSdk\b") { throw 'Gradle 与 Manifest 的最低安卓版本不一致' }
 $apkPath = "artifacts/TvT-$versionName-preview.apk"
 $sdkPath = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $javaPath = if ($env:JAVA_HOME) { $env:JAVA_HOME } elseif (Test-Path "$env:USERPROFILE/.jdks/jbr-17.0.14") { "$env:USERPROFILE/.jdks/jbr-17.0.14" } else { 'C:\Program Files\Android\Android Studio\jbr' }
 $toolPath = Join-Path $sdkPath 'build-tools\34.0.0'
+$dexJar = Join-Path $sdkPath 'build-tools\36.0.0\lib\d8.jar'
+if (!(Test-Path -LiteralPath $dexJar)) { throw '请安装 Android SDK Build Tools 36.0.0，供 Kotlin 2.1 原生依赖转换 DEX' }
 $androidJar = Join-Path $sdkPath 'platforms\android-34\android.jar'
 function Run-Checked([string]$program, [string[]]$arguments) {
     & $program @arguments
     if ($LASTEXITCODE -ne 0) { throw "构建失败：$program" }
 }
+$nativeJars = @(& "$PSScriptRoot/native-dependencies.ps1")
 Run-Checked 'npm.cmd' @('run', 'build')
 foreach ($relativePath in @('build/classes', 'build/generated', 'build/assets/web')) {
     $targetPath = [IO.Path]::GetFullPath((Join-Path $workspacePath $relativePath))
@@ -20,6 +29,7 @@ foreach ($relativePath in @('build/classes', 'build/generated', 'build/assets/we
 }
 New-Item -ItemType Directory -Force build/classes,build/assets/web,artifacts | Out-Null
 Copy-Item -Path web/dist/* -Destination build/assets/web -Recurse -Force
+Copy-Item -Path build/native-assets/* -Destination build/assets -Force
 $updateConfig = Get-Content config/update.json -Raw | ConvertFrom-Json
 if ($env:TING_UPDATE_REPOSITORY) { $updateConfig.repository = $env:TING_UPDATE_REPOSITORY }
 if ($env:TING_GITEE_REPOSITORY) { $updateConfig.giteeRepository = $env:TING_GITEE_REPOSITORY }
@@ -44,9 +54,9 @@ try {
     if ($null -eq $archive.GetEntry('assets/web/index.html')) { throw 'Web assets are missing from APK' }
 } finally { $archive.Dispose() }
 $sourceFiles = @(Get-ChildItem android/src,build/generated -Recurse -Filter '*.java' | ForEach-Object { $_.FullName })
-Run-Checked "$javaPath/bin/javac.exe" (@('-encoding','UTF-8','-source','8','-target','8','-classpath',$androidJar,'-d','build/classes') + $sourceFiles)
+Run-Checked "$javaPath/bin/javac.exe" (@('-encoding','UTF-8','-source','8','-target','8','-classpath',((@($androidJar) + $nativeJars) -join ';'),'-d','build/classes') + $sourceFiles)
 Run-Checked "$javaPath/bin/jar.exe" @('cf','build/classes.jar','-C','build/classes','.')
-Run-Checked "$javaPath/bin/java.exe" @('-cp',"$toolPath/lib/d8.jar",'com.android.tools.r8.D8','--lib',$androidJar,'--min-api','26','--output','build','build/classes.jar')
+Run-Checked "$javaPath/bin/java.exe" (@('-cp',$dexJar,'com.android.tools.r8.D8','--lib',$androidJar,'--min-api',$minSdk,'--output','build','build/classes.jar') + $nativeJars)
 Copy-Item build/base.apk build/unsigned.apk -Force
 Run-Checked "$javaPath/bin/jar.exe" @('uf','build/unsigned.apk','-C','build','classes.dex')
 Run-Checked "$toolPath/zipalign.exe" @('-f','4','build/unsigned.apk','build/aligned.apk')
@@ -58,4 +68,9 @@ if (!(Test-Path $keyPath)) {
 }
 Run-Checked "$javaPath/bin/java.exe" @('-jar',"$toolPath/lib/apksigner.jar",'sign','--ks',$keyPath,'--ks-pass','env:TING_SIGNING_PASSWORD','--out',$apkPath,'build/aligned.apk')
 Run-Checked "$javaPath/bin/java.exe" @('-jar',"$toolPath/lib/apksigner.jar",'verify','--verbose',$apkPath)
+$apkInfo = & "$toolPath/aapt.exe" dump badging $apkPath
+if ($LASTEXITCODE -ne 0 -or $apkInfo -notcontains "sdkVersion:'$minSdk'") {
+    throw 'APK 最低安装版本校验失败'
+}
+Write-Host "最低安装版本：Android 8.0（API $minSdk），更低版本由系统安装器拒绝"
 Write-Host "APK 已生成：$apkPath"

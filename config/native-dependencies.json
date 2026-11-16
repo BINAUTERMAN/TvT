@@ -1,0 +1,61 @@
+[
+  {
+    "group": "com.squareup.okhttp3",
+    "name": "okhttp-android",
+    "version": "5.5.1",
+    "extension": "aar",
+    "repository": "central",
+    "sha256": "ce00fd7751cf7e4f28ba73a0287b3cc0c62b8b83f038e428592eeef189513ee1",
+    "jarSha256": "1dc59d283780d37a351698cc7b6f790fe8dab522c2a048541e625296bdf6e837"
+  },
+  {
+    "group": "com.squareup.okio",
+    "name": "okio-jvm",
+    "version": "3.18.1",
+    "extension": "jar",
+    "repository": "central",
+    "sha256": "b97b640557a650d15411f2be29aef558c4e422a83653cb18ba494311dbed18be"
+  },
+  {
+    "group": "org.jetbrains.kotlin",
+    "name": "kotlin-stdlib",
+    "version": "2.1.21",
+    "extension": "jar",
+    "repository": "central",
+    "sha256": "263bdc679e1f62012db7b091796279b6d71cf36f4797a98ff1ace05835f201c8"
+  },
+  {
+    "group": "org.jetbrains",
+    "name": "annotations",
+    "version": "13.0",
+    "extension": "jar",
+    "repository": "central",
+    "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478"
+  },
+  {
+    "group": "androidx.startup",
+    "name": "startup-runtime",
+    "version": "1.2.0",
+    "extension": "aar",
+    "repository": "google",
+    "sha256": "f51d361d17b30b09cfb9e2aebf301d113f99437cbf462a066092795fb60eddd2",
+    "jarSha256": "c7049a3503ba8b9d68de20719a045b5dcc11f2a9086edb1d1b6cd9487d7cc5e6"
+  },
+  {
+    "group": "androidx.tracing",
+    "name": "tracing",
+    "version": "1.0.0",
+    "extension": "aar",
+    "repository": "google",
+    "sha256": "07b8b6139665b884a162eccf97891ca50f7f56831233bf25168ae04f7b568612",
+    "jarSha256": "f14fa7864f1a61bb9a6e2fe9ffaf1f911f03a44ff5d06172b1ef84b3ec30a2d9"
+  },
+  {
+    "group": "androidx.annotation",
+    "name": "annotation-jvm",
+    "version": "1.10.0",
+    "extension": "jar",
+    "repository": "google",
+    "sha256": "ddd072ddbb553178e205517ce777b2f05aa9e412982d9ecb4eedc74f1212f697"
+  }
+]

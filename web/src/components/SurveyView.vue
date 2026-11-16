@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import { ArrowLeft, ArrowUpRight, Heart, Star } from 'lucide-vue-next';
 import { native } from '../bridge';
+import { submissionId } from '../compatibility';
 import {
   sendSurvey,
   surveyChoices,
@@ -16,7 +17,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ close: [] }>();
 const answers = reactive<SurveyAnswers>({
-  submissionId: crypto.randomUUID(),
+  submissionId: submissionId(),
   rating: 0,
   optimization: '',
   favorites: [],
@@ -376,6 +377,7 @@ onBeforeUnmount(() => {
 }
 .survey-standalone {
   position: static;
+  min-height: 100vh;
   min-height: 100dvh;
 }
 .survey-topbar {

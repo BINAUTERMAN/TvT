@@ -130,13 +130,9 @@ async function account() {
     loggedIn.value = info.loggedIn;
     name.value = info.name;
     if (info.loggedIn) {
-      try {
-        await refreshVip(true);
-      } catch {
-        vip.label = 'VIP 状态暂不可用';
-      }
+      void refreshVip(true).catch(() => {});
+      void syncFavorites().catch(() => {});
     }
-    if (info.loggedIn) void syncFavorites().catch(() => {});
   } catch (error) {
     status.value = (error as Error).message;
   }

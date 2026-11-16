@@ -7,14 +7,24 @@ import android.util.DisplayMetrics;
 import android.view.*;
 
 final class LyricsScreen {
-  static Context windowContext(Context source) {
+  private static Context overlayContext;
+
+  static synchronized Context windowContext(Context source) {
     if (Build.VERSION.SDK_INT < 30) return source;
-    return source
-        .createDisplayContext(
-            source
-                .getSystemService(android.hardware.display.DisplayManager.class)
-                .getDisplay(Display.DEFAULT_DISPLAY))
-        .createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+    if (overlayContext != null) return overlayContext;
+    Context app = source.getApplicationContext();
+    Display display = app.getSystemService(android.hardware.display.DisplayManager.class)
+        .getDisplay(Display.DEFAULT_DISPLAY);
+    if (display == null) return app;
+    Context displayContext = app.createDisplayContext(display);
+    try {
+      // 服务重建和两类歌词共用窗口上下文，避免 Android 11 的窗口令牌配额耗尽。
+      overlayContext = displayContext.createWindowContext(
+          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+    } catch (UnsupportedOperationException unavailable) {
+      overlayContext = displayContext;
+    }
+    return overlayContext;
   }
 
   static Rect full(WindowManager windows) {
@@ -82,7 +92,8 @@ final class LyricsScreen {
     right = Math.min(right, area.width() - left - 1);
     top = Math.min(top, area.height() - 1);
     bottom = Math.min(bottom, area.height() - top - 1);
-    area.inset(left, top, right, bottom);
+    // 四参数 Rect.inset 从 API 31 才提供，旧系统直接设置边界。
+    area.set(area.left + left, area.top + top, area.right - right, area.bottom - bottom);
     return area;
   }
 

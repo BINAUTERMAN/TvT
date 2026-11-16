@@ -4,7 +4,10 @@ import { normalize } from './music';
 export type Raw = Record<string, unknown>;
 const cache = new Map<string, { time: number; value: Raw }>();
 const pending = new Map<string, Promise<Raw>>();
+let cacheGeneration = 0;
 export function invalidateCatalog() {
+  cacheGeneration++;
+  pending.clear();
   cache.clear();
 }
 export async function catalog(
@@ -17,20 +20,24 @@ export async function catalog(
   if (!refresh && saved && Date.now() - saved.time < 5 * 60000)
     return saved.value;
   if (pending.has(key)) return pending.get(key)!;
+  const generation = cacheGeneration;
   const request = native<Raw>('catalog', { route, data })
     .then((value) => {
-      cache.set(key, { time: Date.now(), value });
+      if (generation === cacheGeneration)
+        cache.set(key, { time: Date.now(), value });
       if (cache.size > 128) cache.delete(cache.keys().next().value!);
       return value;
     })
-    .finally(() => pending.delete(key));
+    .finally(() => {
+      if (pending.get(key) === request) pending.delete(key);
+    });
   pending.set(key, request);
   return request;
 }
 export const clean = (value: unknown): string =>
   String(value ?? '').replace(/<[^>]*>/g, '');
 export function cover(value: unknown): string {
-  return clean(value).replaceAll('{size}', '400').replace('http:', 'https:');
+  return clean(value).split('{size}').join('400').replace('http:', 'https:');
 }
 export function rows(
   value: unknown,

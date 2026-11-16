@@ -158,11 +158,7 @@ public final class LyricsChecks extends Instrumentation {
     try {
       output = new File(target.getExternalFilesDir(null), "lyrics-verification");
       output.mkdirs();
-      activity =
-          startActivitySync(
-              new Intent()
-                  .setClassName(target, "cn.ting.music.MainActivity")
-                  .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+      activity = DeviceLaunch.start(this, target);
       waitForIdleSync();
       WebView web = (WebView) field(activity, "web");
       boolean ready = false;
@@ -392,7 +388,7 @@ public final class LyricsChecks extends Instrumentation {
               check(
                   "Locked lyrics use touch-through window flags",
                   (lockedLayout.flags & WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
-                      && lockedLayout.alpha <= .8f);
+                      && lockedLayout.alpha <= (android.os.Build.VERSION.SDK_INT >= 31 ? .8f : 1f));
               method(type, "hide").invoke(overlay[0]);
             } catch (Exception error) {
               throw new RuntimeException(error);

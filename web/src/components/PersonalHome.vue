@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   ArrowUpRight,
   Play,
@@ -39,8 +39,12 @@ const favoriteMix = computed(() => ({
   presetTracks: library.favorites,
 }));
 const errors = ref('');
+let loadGeneration = 0;
+onUnmounted(() => {
+  loadGeneration++;
+});
 async function load(refresh = false) {
-  if (busy.value) return;
+  const generation = ++loadGeneration;
   busy.value = true;
   loggedIn.value = profile.loggedIn;
   errors.value = '';
@@ -51,19 +55,21 @@ async function load(refresh = false) {
   const values = await Promise.allSettled([
     ...(loggedIn.value
       ? [
-          catalog('daily', {}, refresh).then(
-            (value) => (daily.value = tracksFrom(value)),
-          ),
-          catalog('recommend', {}, refresh).then(
-            (value) => (recommendations.value = tracksFrom(value)),
-          ),
+          catalog('daily', {}, refresh).then((value) => {
+            if (generation === loadGeneration) daily.value = tracksFrom(value);
+          }),
+          catalog('recommend', {}, refresh).then((value) => {
+            if (generation === loadGeneration)
+              recommendations.value = tracksFrom(value);
+          }),
         ]
       : []),
-    catalog('playlists', {}, refresh).then(
-      (value) =>
-        (playlists.value = entitiesFrom(value, 'playlist').slice(0, 8)),
-    ),
+    catalog('playlists', {}, refresh).then((value) => {
+      if (generation === loadGeneration)
+        playlists.value = entitiesFrom(value, 'playlist').slice(0, 8);
+    }),
   ]);
+  if (generation !== loadGeneration) return;
   errors.value = values
     .filter((value) => value.status === 'rejected')
     .map((value) =>

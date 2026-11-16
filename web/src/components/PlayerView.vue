@@ -261,8 +261,8 @@ watch(
         <div class="player-controls">
           <div class="now-title">
             <div>
-              <h2>{{ current.title }}</h2>
-              <p>{{ current.artist }}</p>
+              <h2 :title="current.title">{{ current.title }}</h2>
+              <p :title="current.artist">{{ current.artist }}</p>
             </div>
             <button
               class="icon"
@@ -411,3 +411,140 @@ watch(
     </div>
   </Transition>
 </template>
+
+<style scoped>
+@media (min-width: 700px) {
+  .player-screen {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 16px clamp(24px, 5vw, 80px);
+    overflow: hidden;
+  }
+  .player-screen > header {
+    flex: 0 0 56px;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+  .player-layout {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-width: 1480px;
+    margin: 0 auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+    gap: clamp(24px, 5vw, 80px);
+  }
+  .player-visual {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+  }
+  .player-visual :deep(.content-pane) {
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+  }
+  .cover-stage {
+    width: min(100%, calc(100vh - 190px), 560px);
+    margin: 0 auto 44px;
+    padding: clamp(16px, 2.5vw, 30px);
+  }
+  .cover-stage .player-art {
+    max-width: none;
+    margin: 0;
+  }
+  .lyrics {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 15vh 0;
+    overscroll-behavior: contain;
+  }
+  .player-controls {
+    width: 100%;
+    max-width: 560px;
+    min-width: 0;
+    margin: auto;
+  }
+  .now-title h2 {
+    font-size: clamp(24px, 2.8vw, 38px);
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .now-title p {
+    margin: 6px 0 0;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+@media (min-width: 700px) and (orientation: portrait) {
+  .player-screen {
+    padding: 20px clamp(24px, 7vw, 72px);
+  }
+  .player-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: clamp(12px, 2vh, 28px);
+  }
+  .cover-stage {
+    width: min(65vw, calc(100vh - 500px), 560px);
+    margin-bottom: 44px;
+  }
+  .player-controls {
+    padding-bottom: 8px;
+  }
+  .transport {
+    margin: clamp(14px, 2vh, 28px) 0;
+  }
+}
+@media (min-width: 700px) and (max-height: 600px) {
+  .player-screen {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .player-screen > header {
+    flex-basis: 44px;
+  }
+  .cover-stage {
+    width: min(100%, calc(100vh - 150px));
+    margin-bottom: 32px;
+    padding: 16px;
+  }
+  .lyric-caption {
+    top: calc(100% + 16px);
+  }
+  .now-title h2 {
+    font-size: 24px;
+  }
+  .playback-status {
+    height: 18px;
+    margin-top: 4px;
+    line-height: 18px;
+  }
+  .seek {
+    height: 24px;
+    margin-top: 8px;
+  }
+  .transport {
+    margin: 8px 0;
+  }
+  .big-play {
+    width: 56px;
+    height: 56px;
+  }
+  .player-tools {
+    padding-top: 0;
+  }
+}
+</style>
