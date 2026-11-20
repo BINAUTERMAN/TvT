@@ -3,6 +3,9 @@
     <application android:label="听屿设备测试">
         <activity android:name=".FocusProbeActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
+    <instrumentation android:name="cn.ting.music.tests.CrashDiagnostics" android:targetPackage="cn.ting.music" android:label="TvT 崩溃诊断" />
+    <instrumentation android:name="cn.ting.music.tests.PlaybackCrashChecks" android:targetPackage="cn.ting.music" android:label="TvT 播放崩溃回归验证" />
+    <instrumentation android:name="cn.ting.music.tests.UpdateDownloadChecks" android:targetPackage="cn.ting.music" android:label="TvT 更新下载状态验证" />
     <instrumentation android:name="cn.ting.music.tests.DeviceSmoke" android:targetPackage="cn.ting.music" android:label="听屿设备验证" />
     <instrumentation android:name="cn.ting.music.tests.NetworkDiagnostics" android:targetPackage="cn.ting.music" android:label="听屿接口诊断" />
     <instrumentation android:name="cn.ting.music.tests.CatalogChecks" android:targetPackage="cn.ting.music" android:label="听屿目录验证" />

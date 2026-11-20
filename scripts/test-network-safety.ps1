@@ -7,7 +7,9 @@ $androidJar = Join-Path $sdkPath 'platforms/android-34/android.jar'
 $classpath = (@('build/test/json.jar',$androidJar) + $nativeJars) -join ';'
 New-Item -ItemType Directory -Force build/test/network-safety | Out-Null
 if (!(Test-Path build/test/json.jar)) { Invoke-WebRequest 'https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar' -OutFile build/test/json.jar }
-& "$javaBin/javac.exe" -encoding UTF-8 -sourcepath android/src -cp $classpath -d build/test/network-safety tests/NetworkSafetyCheck.java
+& "$javaBin/javac.exe" -encoding UTF-8 -sourcepath android/src -cp $classpath -d build/test/network-safety tests/NetworkSafetyCheck.java tests/HttpCancellationCheck.java
 if ($LASTEXITCODE -ne 0) { throw '网络与空值测试编译失败' }
 & "$javaBin/java.exe" -cp "build/test/network-safety;$classpath" cn.ting.music.NetworkSafetyCheck
 if ($LASTEXITCODE -ne 0) { throw '网络与空值测试失败' }
+& "$javaBin/java.exe" -cp "build/test/network-safety;$classpath" cn.ting.music.HttpCancellationCheck
+if ($LASTEXITCODE -ne 0) { throw '网络取消与并发关闭测试失败' }

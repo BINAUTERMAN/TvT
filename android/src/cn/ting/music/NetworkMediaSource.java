@@ -11,7 +11,7 @@ final class NetworkMediaSource extends MediaDataSource {
   private volatile InputStream input;
   private volatile boolean closed;
   private long position;
-  private long length = -1;
+  private volatile long length = -1;
   private final byte[] cache = new byte[256 * 1024];
   private long cacheStart;
   private int cacheLength;
@@ -65,6 +65,7 @@ final class NetworkMediaSource extends MediaDataSource {
     }
     if (offset != position) openAt(offset);
     int read = input.read(cache);
+    if (closed) throw new IOException("音频已关闭");
     if (read < 0) return -1;
     cacheStart = offset;
     cacheLength = read;

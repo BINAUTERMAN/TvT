@@ -19,7 +19,7 @@ export const updates = reactive({
   skip: 0,
   configured: false,
   repository: '',
-  currentVersion: '5.6',
+  currentVersion: '5.7',
   checking: false,
   downloading: false,
   state: 'idle',
@@ -44,6 +44,7 @@ export async function checkUpdates(manual = false) {
       updates.configured = release.configured;
     if (release.available !== undefined) {
       updates.release = release;
+      await downloadStatus();
       if (
         !manual &&
         release.available &&
@@ -88,10 +89,12 @@ export async function downloadUpdate() {
   }
 }
 export async function installUpdate() {
+  updates.error = '';
   try {
     await native('updateInstall');
   } catch (error) {
     updates.error = (error as Error).message;
+    await downloadStatus();
   }
 }
 export async function changeUpdateChoice(

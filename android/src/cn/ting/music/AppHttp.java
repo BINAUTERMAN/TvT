@@ -88,6 +88,8 @@ public final class AppHttp {
     private volatile Call call;
     private volatile Response response;
     private volatile boolean cancelled;
+    private final Object readLock = new Object();
+    private InputStream input;
     private final java.util.concurrent.atomic.AtomicBoolean closeQueued = new java.util.concurrent.atomic.AtomicBoolean();
 
     Connection(URL url) { super(url); }
@@ -130,11 +132,32 @@ public final class AppHttp {
     @Override public InputStream getInputStream() throws IOException {
       Response received = execute();
       if (received.code() >= 400) throw new IOException("服务返回 HTTP " + received.code());
-      return received.body().byteStream();
+      return bodyStream(received);
     }
     @Override public InputStream getErrorStream() {
-      try { Response received = execute(); return received.code() >= 400 ? received.body().byteStream() : null; }
+      try { Response received = execute(); return received.code() >= 400 ? bodyStream(received) : null; }
       catch (IOException error) { return null; }
+    }
+    private synchronized InputStream bodyStream(Response received) {
+      if (input == null) input = new FilterInputStream(received.body().byteStream()) {
+        private void checkOpen() throws IOException {
+          if (cancelled) throw new IOException("请求已取消");
+        }
+        @Override public int read() throws IOException {
+          synchronized (readLock) { checkOpen(); return in.read(); }
+        }
+        @Override public int read(byte[] buffer, int offset, int count) throws IOException {
+          synchronized (readLock) { checkOpen(); return in.read(buffer, offset, count); }
+        }
+        @Override public long skip(long count) throws IOException {
+          synchronized (readLock) { checkOpen(); return in.skip(count); }
+        }
+        @Override public int available() throws IOException {
+          synchronized (readLock) { checkOpen(); return in.available(); }
+        }
+        @Override public void close() { disconnect(); }
+      };
+      return input;
     }
     @Override public String getHeaderField(String name) {
       try {
@@ -150,9 +173,17 @@ public final class AppHttp {
       Call active = call;
       if (active != null) active.cancel();
       Response received = response;
-      // 关闭未读完的响应可能读尾部，取消立即执行，关闭交给短寿命线程。
+      // 取消立即中断 Socket；读取退出后再关闭响应，避免 Okio 并发读尾部。
       if (received != null && closeQueued.compareAndSet(false, true))
-        closeWorker.execute(received::close);
+        closeWorker.execute(() -> {
+          synchronized (readLock) {
+            try { received.close(); }
+            catch (RuntimeException error) {
+              java.util.logging.Logger.getLogger("TvT").warning(
+                  "关闭已取消的网络响应失败：" + error.getClass().getSimpleName());
+            }
+          }
+        });
     }
   }
 }

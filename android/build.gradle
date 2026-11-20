@@ -10,8 +10,8 @@ android {
         applicationId 'cn.ting.music'
         minSdk 26
         targetSdk 34
-        versionCode 100008
-        versionName '5.6'
+        versionCode 100010
+        versionName '5.7'
     }
     sourceSets {
         main {

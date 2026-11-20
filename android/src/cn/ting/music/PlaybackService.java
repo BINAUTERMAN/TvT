@@ -70,6 +70,7 @@ public final class PlaybackService extends Service {
   private boolean foreground;
   private boolean destroyed;
   private float speed = 1f;
+  private float appliedSpeed = 1f;
   private long sleepAt;
   private String error = "";
   private boolean favorite;
@@ -421,7 +422,7 @@ public final class PlaybackService extends Service {
         break;
       case "speed":
         speed = Math.max(.5f, Math.min(2f, (float) data.optDouble("speed", 1)));
-        if (isPlaying()) media.setPlaybackParams(media.getPlaybackParams().setSpeed(speed));
+        if (isPlaying()) applyPlaybackSpeed(media);
         updateFloatingLyrics();
         emit();
         break;
@@ -728,7 +729,7 @@ public final class PlaybackService extends Service {
                           if (autoPlay
                               && audio.requestAudioFocus(focus)
                                   == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                            player.setPlaybackParams(new PlaybackParams().setSpeed(speed));
+                            applyPlaybackSpeed(player);
                             fadeVolume(0, 1);
                             player.start();
                             new StarPrompt(this).started(playbackSession);
@@ -791,6 +792,13 @@ public final class PlaybackService extends Service {
     return !destroyed && token == generation && player != null && media == player;
   }
 
+  private void applyPlaybackSpeed(MediaPlayer player) {
+    // 新播放器默认为正常速度，避免每次播放和恢复都同步查询系统播放参数。
+    if (Float.compare(appliedSpeed, speed) == 0) return;
+    player.setPlaybackParams(new PlaybackParams().allowDefaults().setSpeed(speed));
+    appliedSpeed = speed;
+  }
+
   private void toggleToPlay() {
     cancelInterruption();
     if (fm.active && fm.exhausted) {
@@ -808,7 +816,7 @@ public final class PlaybackService extends Service {
       boolean continuingFade = fadingOut;
       handler.removeCallbacks(finishFade);
       fadingOut = false;
-      media.setPlaybackParams(new PlaybackParams().setSpeed(speed));
+      applyPlaybackSpeed(media);
       media.setVolume(1, 1);
       fadeVolume(continuingFade ? currentEnvelope() : 0, 1);
       media.start();
@@ -1368,6 +1376,7 @@ public final class PlaybackService extends Service {
       envelope = null;
     }
     prepared = false;
+    appliedSpeed = 1f;
     if (bass != null) {
       bass.release();
       bass = null;

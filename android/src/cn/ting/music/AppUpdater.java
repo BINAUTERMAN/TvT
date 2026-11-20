@@ -143,6 +143,16 @@ final class AppUpdater {
   private JSONObject downloadState() throws Exception {
     long id = saved.getLong("downloadId", 0);
     if (id == 0) return new JSONObject().put("state", "idle");
+    JSONObject downloaded = new JSONObject(saved.getString("downloadCandidate", "{}"));
+    JSONObject latest = new JSONObject(saved.getString("candidate", "{}"));
+    long current = version(context.getPackageManager().getPackageInfo(context.getPackageName(), 0));
+    // 下载状态只属于当次清单；升级后或发现其他发行包时，旧包不能继续显示为可安装。
+    if (downloaded.optLong("versionCode") <= current
+        || (latest.has("versionCode") && !samePackage(downloaded, latest))) {
+      ((DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE)).remove(id);
+      saved.edit().remove("downloadId").remove("downloadCandidate").remove("downloadFallback").apply();
+      return new JSONObject().put("state", "idle");
+    }
     try (Cursor cursor =
         ((DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE))
             .query(new DownloadManager.Query().setFilterById(id))) {
@@ -156,6 +166,12 @@ final class AppUpdater {
                   ? "ready"
                   : status == DownloadManager.STATUS_FAILED ? "failed" : "downloading");
     }
+  }
+
+  private static boolean samePackage(JSONObject first, JSONObject second) {
+    return first.optLong("versionCode") == second.optLong("versionCode")
+        && first.optString("sha256").equalsIgnoreCase(second.optString("sha256"))
+        && first.optString("file").equals(second.optString("file"));
   }
 
   synchronized Intent installation() throws Exception {
@@ -179,10 +195,13 @@ final class AppUpdater {
             : PackageManager.GET_SIGNATURES;
     PackageInfo installed = packages.getPackageInfo(context.getPackageName(), flags),
         incoming = packages.getPackageArchiveInfo(file.getAbsolutePath(), flags);
-    if (incoming == null
-        || !context.getPackageName().equals(incoming.packageName)
-        || version(incoming) != candidate.optLong("versionCode")
-        || version(incoming) <= version(installed)) throw new Exception("安装包版本与更新清单不匹配");
+    if (incoming == null) throw new Exception("无法解析安装包，请重新下载");
+    if (!context.getPackageName().equals(incoming.packageName))
+      throw new Exception("安装包包名与当前应用不匹配");
+    if (version(incoming) != candidate.optLong("versionCode"))
+      throw new Exception("安装包版本与更新清单不匹配，请重新下载");
+    if (version(incoming) <= version(installed))
+      throw new Exception("已下载的安装包不高于当前版本，请重新检查更新");
     if (!Arrays.equals(signatures(installed), signatures(incoming)))
       throw new Exception("安装包签名不匹配，已阻止安装");
     if (!packages.canRequestPackageInstalls())
