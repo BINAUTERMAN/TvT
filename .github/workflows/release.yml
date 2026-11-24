@@ -69,6 +69,7 @@ jobs:
             }
             if (!$ready) { throw 'Interface test server did not start' }
             ./scripts/test-updates.ps1
+            ./scripts/test-lyrics.ps1
             npm test
             if ($LASTEXITCODE -ne 0) { throw 'Interface tests failed' }
             node scripts/test-login-protocol.mjs

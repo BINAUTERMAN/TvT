@@ -42,6 +42,13 @@ public final class NetworkSafetyCheck {
     JSONObject malformed = new JSONObject().put("relate_goods", new JSONArray().put(JSONObject.NULL)
         .put(new JSONObject().put("quality", "flac").put("info", JSONObject.NULL)));
     if (!QualityCatalog.hash(malformed, "flac").isEmpty()) throw new AssertionError("异常 JSON 不应生成哈希");
+    JSONObject original = new JSONObject().put("relate_goods", new JSONArray().put(new JSONObject()
+        .put("quality", "320").put("level", 4).put("hash", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        .put("info", new JSONObject().put("filesize", 12345))))
+        .put("trans_param", new JSONObject().put("ogg_320_hash", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").put("ogg_320_filesize", 6789));
+    if (!QualityCatalog.hash(original, "320").equals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        || QualityCatalog.options(original).getJSONObject(1).getLong("size") != 12345)
+      throw new AssertionError("原始音质的哈希和文件大小必须一致，不能混入转码资源");
     System.out.println("NETWORK_NULL_SAFETY_PASS");
   }
 }

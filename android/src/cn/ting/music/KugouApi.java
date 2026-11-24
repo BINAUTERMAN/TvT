@@ -273,7 +273,8 @@ public final class KugouApi {
       params.put("need_m", "0");
       params.put("ptype", "0");
       params.put("mtype", "0");
-      params.put("need_ogg", quality.equals("128") || quality.equals("320") ? "1" : "0");
+      // 使用音质条目对应的原始资源，保持音频与歌词的定位时间基准一致。
+      params.put("need_ogg", "0");
       params.put("module_id", "51");
       params.put("clientver", "11561");
       params.put("auth", authorization.optString("auth"));

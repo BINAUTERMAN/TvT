@@ -1,7 +1,7 @@
 {
   "name": "ting-music-android",
-  "version": "5.7.0",
-  "releaseTag": "5.7v",
+  "version": "5.8.0",
+  "releaseTag": "5.8v",
   "private": true,
   "license": "GPL-2.0-only",
   "type": "module",

@@ -53,12 +53,14 @@ public final class MainActivity extends Activity {
   private boolean sentInitialState;
   private String pendingExport;
   private boolean serviceBound;
+  private boolean launchResumeChecked;
   private final java.util.ArrayDeque<Runnable> playerCommands = new java.util.ArrayDeque<>();
   private final ServiceConnection playerConnection =
       new ServiceConnection() {
         public void onServiceConnected(ComponentName name, IBinder binder) {
           handler.removeCallbacks(playerConnectionTimeout);
           while (!playerCommands.isEmpty()) playerCommands.removeFirst().run();
+          resumePlaybackOnLaunch();
           handler.removeCallbacks(tick);
           handler.post(tick);
         }
@@ -68,6 +70,19 @@ public final class MainActivity extends Activity {
         }
       };
   private final Runnable playerConnectionTimeout = () -> failPendingPlayerCommands();
+
+  private void resumePlaybackOnLaunch() {
+    PlaybackService player = PlaybackService.instance;
+    if (launchResumeChecked || !loaded || !visible || player == null) return;
+    launchResumeChecked = true;
+    try {
+      JSONObject state = player.snapshot();
+      if (!state.optBoolean("playing") && !state.optBoolean("loading")
+          && getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("resumeOnLaunch", true)
+          && getSharedPreferences("playback", MODE_PRIVATE).getBoolean("wasPlaying", false))
+        player.execute("resume", new JSONObject());
+    } catch (Exception error) { android.util.Log.w("TvT", "恢复播放失败"); }
+  }
 
   private void ensurePlayer() {
     if (!serviceBound) {
@@ -269,15 +284,7 @@ public final class MainActivity extends Activity {
             sendSystemAppearance();
             handler.removeCallbacks(tick);
             handler.post(tick);
-            PlaybackService player = PlaybackService.instance;
-            if (player != null
-                && getSharedPreferences("preferences", MODE_PRIVATE)
-                    .getBoolean("resumeOnLaunch", true)
-                && getSharedPreferences("playback", MODE_PRIVATE).getBoolean("wasPlaying", false))
-              try {
-                player.execute("resume", new JSONObject());
-              } catch (Exception ignored) {
-              }
+            resumePlaybackOnLaunch();
           }
         });
     setContentView(web);
@@ -904,6 +911,7 @@ public final class MainActivity extends Activity {
     super.onResume();
     ensurePlayer();
     visible = true;
+    resumePlaybackOnLaunch();
     sentInitialState = false;
     sendSystemAppearance();
     if (web != null) {

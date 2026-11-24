@@ -54,6 +54,15 @@ public final class PlaybackService extends Service {
   private int mode;
   private volatile int generation;
   private int resumePosition;
+  private boolean seekPending;
+  private boolean seekResume;
+  private boolean seekRestoring;
+  private int seekTarget;
+  private int seekActive;
+  private int seekPrevious;
+  private boolean loadAutoPlay;
+  private volatile long loadStartedAt, loadResolvedAt, loadSourceOpenedAt, loadPreparedAt, loadReadyAt;
+  private int durationMs;
   private boolean loading;
   private boolean prepared;
   private boolean resumeAfterFocus;
@@ -71,6 +80,7 @@ public final class PlaybackService extends Service {
   private boolean destroyed;
   private float speed = 1f;
   private float appliedSpeed = 1f;
+  private final PlaybackClock playbackClock = new PlaybackClock();
   private long sleepAt;
   private String error = "";
   private boolean favorite;
@@ -250,9 +260,9 @@ public final class PlaybackService extends Service {
       state.put(
           "position",
           prepared && media != null
-              ? media.getCurrentPosition() / 1000.0
+              ? (seekPending ? seekPrevious : playbackPosition()) / 1000.0
               : resumePosition / 1000.0);
-      state.put("duration", prepared && media != null ? media.getDuration() / 1000.0 : 0);
+      state.put("duration", prepared ? durationMs / 1000.0 : 0);
       state.put("mode", mode).put("sleepAt", sleepAt).put("error", error);
       state
           .put("liked", favorite)
@@ -270,6 +280,11 @@ public final class PlaybackService extends Service {
 
   private boolean isPlaying() {
     return media != null && prepared && !fadingOut && media.isPlaying();
+  }
+
+  private int playbackPosition() {
+    if (!prepared || media == null) return resumePosition;
+    return (int) Math.min(durationMs, playbackClock.position(media.getCurrentPosition(), SystemClock.elapsedRealtime()));
   }
 
   private JSONObject track() {
@@ -340,7 +355,7 @@ public final class PlaybackService extends Service {
           throw new Exception("音质选项无效");
         quality = selected;
         getSharedPreferences("playback", MODE_PRIVATE).edit().putString("quality", quality).apply();
-        resumePosition = prepared ? media.getCurrentPosition() : resumePosition;
+        resumePosition = seekPending ? seekTarget : prepared ? playbackPosition() : resumePosition;
         load(isPlaying() || loading, false);
         break;
       case "pause":
@@ -421,7 +436,9 @@ public final class PlaybackService extends Service {
         emit();
         break;
       case "speed":
+        if (prepared) playbackPosition();
         speed = Math.max(.5f, Math.min(2f, (float) data.optDouble("speed", 1)));
+        playbackClock.speed(speed, SystemClock.elapsedRealtime());
         if (isPlaying()) applyPlaybackSpeed(media);
         updateFloatingLyrics();
         emit();
@@ -639,9 +656,11 @@ public final class PlaybackService extends Service {
           }
         });
     int startPosition = resumePosition;
-    resumePosition = 0;
     releaseMedia();
     loading = true;
+    loadAutoPlay = autoPlay;
+    loadStartedAt = SystemClock.elapsedRealtime();
+    loadResolvedAt = loadSourceOpenedAt = loadPreparedAt = loadReadyAt = 0;
     error = "";
     showNotification();
     emit();
@@ -681,8 +700,11 @@ public final class PlaybackService extends Service {
               }
             }
             final String address = uri;
+            if (token != generation) return;
+            loadResolvedAt = SystemClock.elapsedRealtime();
             final NetworkMediaSource source = address.startsWith("https://") || address.startsWith("http://")
                 ? new NetworkMediaSource(address) : null;
+            if (token == generation) loadSourceOpenedAt = SystemClock.elapsedRealtime();
             handler.post(
                 () -> {
                   if (token != generation || destroyed) {
@@ -702,11 +724,13 @@ public final class PlaybackService extends Service {
                         (player, what, extra) -> {
                           if (!ownsPlayer(player, token)) return true;
                           if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
+                            playbackClock.pause(player.getCurrentPosition(), SystemClock.elapsedRealtime());
                             fmVisualizer.close();
                             playbackBuffer.stop();
                             lyricBuffering = true;
                             floatingLyrics.stopAnimation();
                           } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
+                            if (player.isPlaying() && !seekPending) playbackClock.start(SystemClock.elapsedRealtime());
                             lyricBuffering = false;
                             updateFloatingLyrics();
                             refreshBuffer();
@@ -717,40 +741,27 @@ public final class PlaybackService extends Service {
                     if (source == null) media.setDataSource(this, Uri.parse(address));
                     else media.setDataSource(source);
                     media.setOnSeekCompleteListener(player -> {
-                      if (ownsPlayer(player, token)) updateFloatingLyrics();
+                      if (ownsPlayer(player, token)) completeSeek(player);
                     });
                     media.setOnPreparedListener(
                         player -> {
                           if (!ownsPlayer(player, token)) return;
                           prepared = true;
-                          loading = false;
-                          if (startPosition > 0)
-                            player.seekTo(Math.min(startPosition, player.getDuration()));
-                          if (autoPlay
-                              && audio.requestAudioFocus(focus)
-                                  == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                            applyPlaybackSpeed(player);
-                            fadeVolume(0, 1);
-                            player.start();
-                            new StarPrompt(this).started(playbackSession);
-                            applyBass();
-                          }
-                          updateMetadata();
-                          refreshFavoriteState();
-                          loadFloatingLyrics();
-                          showNotification();
-                          emit();
-                          refreshBuffer();
-                          replenishPersonalFm();
+                          durationMs = player.getDuration();
+                          playbackClock.reset(startPosition, SystemClock.elapsedRealtime());
+                          playbackClock.speed(speed, SystemClock.elapsedRealtime());
+                          loadPreparedAt = SystemClock.elapsedRealtime();
+                          try {
+                            if (startPosition > 0) beginSeek(startPosition, autoPlay, true);
+                            else finishReady(player, autoPlay, true);
+                          } catch (RuntimeException failed) { fail("无法恢复播放位置，请重试"); }
                         });
                     media.setOnCompletionListener(
                         player -> {
                           if (!ownsPlayer(player, token)) return;
                           if (fm.active) next(false);
                           else if (mode == 1) {
-                            player.seekTo(0);
-                            player.start();
-                            emit();
+                            beginSeek(0, true, false);
                           } else if (mode == 0 && index == queue.length() - 1) {
                             pause();
                           } else next(false);
@@ -820,6 +831,7 @@ public final class PlaybackService extends Service {
       media.setVolume(1, 1);
       fadeVolume(continuingFade ? currentEnvelope() : 0, 1);
       media.start();
+      playbackClock.start(SystemClock.elapsedRealtime());
       new StarPrompt(this).started(playbackSession);
       checkpoint();
       showNotification();
@@ -834,8 +846,10 @@ public final class PlaybackService extends Service {
     playbackBuffer.stop();
     cancelInterruption();
     if (loading) {
+      if (seekPending) resumePosition = seekTarget;
       generation++;
       loading = false;
+      loadAutoPlay = false;
       releaseMedia();
     }
     fadeToPause();
@@ -849,17 +863,82 @@ public final class PlaybackService extends Service {
   }
 
   private void seek(double seconds) {
-    if (prepared) media.seekTo((int) Math.max(0, Math.min(media.getDuration(), seconds * 1000)));
+    if (!prepared || media == null || !Double.isFinite(seconds)) return;
+    int target = (int) Math.max(0, Math.min(durationMs, Math.round(seconds * 1000)));
+    if (seekPending) {
+      seekTarget = target;
+      checkpoint();
+      return;
+    }
+    beginSeek(target, isPlaying(), false);
+  }
+
+  private void beginSeek(int position, boolean resume, boolean restoring) {
+    seekPrevious = restoring ? position : playbackPosition();
+    playbackClock.pause(media.getCurrentPosition(), SystemClock.elapsedRealtime());
+    seekTarget = seekActive = Math.max(0, Math.min(position, durationMs));
+    seekResume = resume;
+    seekRestoring = restoring;
+    seekPending = true;
+    loading = true;
+    handler.removeCallbacks(finishFade);
+    fadingOut = false;
+    if (media.isPlaying()) media.pause();
+    handler.removeCallbacks(lyricTick);
+    floatingLyrics.stopAnimation();
+    // 定位异步完成前不能开始播放，否则旧音频缓冲与新歌词进度会同时出现。
+    media.seekTo((long) seekActive, MediaPlayer.SEEK_CLOSEST);
     checkpoint();
-    updateFloatingLyrics();
+    showNotification();
     emit();
+  }
+
+  private void completeSeek(MediaPlayer player) {
+    if (!seekPending) return;
+    try {
+      if (seekTarget != seekActive) {
+        seekActive = seekTarget;
+        player.seekTo((long) seekActive, MediaPlayer.SEEK_CLOSEST);
+        return;
+      }
+      boolean resume = seekResume, restoring = seekRestoring;
+      seekPending = false;
+      resumePosition = seekTarget;
+      playbackClock.reset(seekTarget, SystemClock.elapsedRealtime());
+      playbackClock.speed(speed, SystemClock.elapsedRealtime());
+      finishReady(player, resume, restoring);
+    } catch (RuntimeException failed) { fail("音频定位失败，请重试"); }
+  }
+
+  private void finishReady(MediaPlayer player, boolean resume, boolean initial) {
+    loading = false;
+    if (resume && audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+      applyPlaybackSpeed(player);
+      fadeVolume(0, 1);
+      player.start();
+      playbackClock.start(SystemClock.elapsedRealtime());
+      new StarPrompt(this).started(playbackSession);
+      applyBass();
+    }
+    if (initial) {
+      loadReadyAt = SystemClock.elapsedRealtime();
+      refreshFavoriteState();
+      loadFloatingLyrics();
+    }
+    checkpoint();
+    updateMetadata();
+    updateFloatingLyrics();
+    showNotification();
+    emit();
+    refreshBuffer();
+    replenishPersonalFm();
   }
 
   private void next(boolean previous) {
     if (fm.disliking) fm.cancel();
     resumePosition = 0;
     if (queue.length() == 0) return;
-    if (previous && prepared && media.getCurrentPosition() > 3000) {
+    if (previous && prepared && playbackPosition() > 3000) {
       seek(0);
       return;
     }
@@ -903,6 +982,7 @@ public final class PlaybackService extends Service {
   }
 
   private void newPlaybackSession() {
+    resumePosition = 0;
     playbackSession = java.util.UUID.randomUUID().toString();
     getSharedPreferences("playback", MODE_PRIVATE)
         .edit()
@@ -951,6 +1031,7 @@ public final class PlaybackService extends Service {
   private void completeFade() {
     if (media != null && prepared && fadingOut) {
       media.pause();
+      playbackClock.pause(media.getCurrentPosition(), SystemClock.elapsedRealtime());
       fadingOut = false;
       checkpoint();
       showNotification();
@@ -1018,7 +1099,7 @@ public final class PlaybackService extends Service {
             .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork)
             .putBitmap(MediaMetadata.METADATA_KEY_ART, artwork)
             .putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, artwork)
-            .putLong(MediaMetadata.METADATA_KEY_DURATION, prepared ? media.getDuration() : 0)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, prepared ? durationMs : 0)
             .build());
   }
 
@@ -1119,7 +1200,7 @@ public final class PlaybackService extends Service {
     handler.removeCallbacks(periodicCheckpoint);
     if (isPlaying()) handler.postDelayed(periodicCheckpoint, 30000);
     session.setActive(true);
-    long position = prepared && media != null ? media.getCurrentPosition() : 0;
+    long position = prepared && media != null ? playbackPosition() : resumePosition;
     boolean lyricsEnabled = floatingLyrics.enabled();
     boolean lyricsLocked = lyricsEnabled && floatingLyrics.locked();
     int lyricsIcon =
@@ -1220,13 +1301,17 @@ public final class PlaybackService extends Service {
   }
 
   public void checkpoint() {
-    if (prepared && media != null)
+    if (track() != null) {
+      int position = seekPending ? seekTarget : prepared && media != null ? playbackPosition() : resumePosition;
+      resumePosition = position;
       getSharedPreferences("playback", MODE_PRIVATE)
           .edit()
-          .putInt("position", media.getCurrentPosition())
+          .putString("queue", queue.toString())
+          .putInt("position", position)
           .putInt("index", index)
-          .putBoolean("wasPlaying", isPlaying() || resumeAfterFocus)
+          .putBoolean("wasPlaying", seekPending ? seekResume : loading ? loadAutoPlay : isPlaying() || resumeAfterFocus)
           .apply();
+    }
   }
 
   public void loadFloatingLyrics() {
@@ -1336,7 +1421,7 @@ public final class PlaybackService extends Service {
       if (!statusBarLyrics.isPreviewing()) statusBarLyrics.hide();
       return;
     }
-    long position = prepared && media != null ? media.getCurrentPosition() : resumePosition;
+    long position = prepared && media != null ? playbackPosition() : resumePosition;
     int active = -1;
     for (int index = 0; index < lyricTimes.size(); index++) {
       if (lyricTimes.get(index) <= position) active = index;
@@ -1361,6 +1446,7 @@ public final class PlaybackService extends Service {
   }
 
   private void releaseMedia() {
+    seekPending = false;
     if (mediaSource != null) {
       mediaSource.close();
       mediaSource = null;
@@ -1376,6 +1462,7 @@ public final class PlaybackService extends Service {
       envelope = null;
     }
     prepared = false;
+    durationMs = 0;
     appliedSpeed = 1f;
     if (bass != null) {
       bass.release();
