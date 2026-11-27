@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.ting.music" android:versionCode="100011" android:versionName="5.8">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.ting.music" android:versionCode="100012" android:versionName="5.9">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

@@ -169,7 +169,7 @@ public final class BufferChecks extends Instrumentation {
                           .invoke(value, track, "128");
               File root =
                   new File(getTargetContext().getCacheDir(), "audio-ahead").getCanonicalFile();
-              for (String suffix : new String[] {".audio", ".json", ".part"}) {
+              for (String suffix : new String[] {".audio", ".json", ".part", ".stream", ".ranges", ".ranges.tmp"}) {
                 File file = new File(root, key + suffix).getCanonicalFile();
                 if (root.equals(file.getParentFile())) file.delete();
               }

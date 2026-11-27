@@ -356,7 +356,7 @@ public final class PlaybackService extends Service {
         quality = selected;
         getSharedPreferences("playback", MODE_PRIVATE).edit().putString("quality", quality).apply();
         resumePosition = seekPending ? seekTarget : prepared ? playbackPosition() : resumePosition;
-        load(isPlaying() || loading, false);
+        load(isPlaying() || loading, true, true);
         break;
       case "pause":
         pause();
@@ -632,6 +632,10 @@ public final class PlaybackService extends Service {
   }
 
   private void load(boolean autoPlay, boolean preferCache) {
+    load(autoPlay, preferCache, false);
+  }
+
+  private void load(boolean autoPlay, boolean preferCache, boolean exactQuality) {
     cancelInterruption();
     playbackBuffer.stop();
     JSONObject item = track();
@@ -673,6 +677,11 @@ public final class PlaybackService extends Service {
                 (preferCache && uri.isEmpty()) || uri.startsWith("ting-cache://")
                     ? new MusicCache(this).playback(item)
                     : null;
+            if (cached != null && (exactQuality || uri.isEmpty())
+                && !requestedQuality.equals(cached.optString("quality"))) {
+              cached = null;
+              if (uri.startsWith("ting-cache://")) uri = "";
+            }
             if (cached == null && preferCache && uri.isEmpty())
               cached = playbackBuffer.playback(item, requestedQuality);
             if (cached != null) {
@@ -702,8 +711,13 @@ public final class PlaybackService extends Service {
             final String address = uri;
             if (token != generation) return;
             loadResolvedAt = SystemClock.elapsedRealtime();
-            final NetworkMediaSource source = address.startsWith("https://") || address.startsWith("http://")
-                ? new NetworkMediaSource(address) : null;
+            playbackBuffer.protectCurrent(item, resolvedQuality);
+            final NetworkMediaSource source =
+                address.startsWith("https://") || address.startsWith("http://")
+                    ? playbackBuffer.source(item, resolvedQuality, address) : null;
+            if (source != null) source.onComplete(() -> handler.post(() -> {
+              if (token == generation && !destroyed) refreshBuffer();
+            }));
             if (token == generation) loadSourceOpenedAt = SystemClock.elapsedRealtime();
             handler.post(
                 () -> {
@@ -1447,10 +1461,11 @@ public final class PlaybackService extends Service {
 
   private void releaseMedia() {
     seekPending = false;
-    if (mediaSource != null) {
-      mediaSource.close();
-      mediaSource = null;
-    }
+    // 先撤销所属关系，释放期间到达的旧播放器回调不能再操作当前状态。
+    MediaPlayer retiring = media;
+    NetworkMediaSource source = mediaSource;
+    media = null;
+    mediaSource = null;
     if (fmVisualizer != null) fmVisualizer.close();
     if (statusBarLyrics != null) statusBarLyrics.hide();
     lyricBuffering = false;
@@ -1458,7 +1473,7 @@ public final class PlaybackService extends Service {
     handler.removeCallbacks(finishFade);
     fadingOut = false;
     if (envelope != null) {
-      envelope.close();
+      try { envelope.close(); } catch (IllegalStateException ignored) {}
       envelope = null;
     }
     prepared = false;
@@ -1468,10 +1483,9 @@ public final class PlaybackService extends Service {
       bass.release();
       bass = null;
     }
-    if (media != null) {
-      media.release();
-      media = null;
-    }
+    // 音量和音效控制仍依赖活跃播放器，先释放它们，再中止读取并释放播放器。
+    if (source != null) source.close();
+    if (retiring != null) retiring.release();
   }
 
   @Override
@@ -1521,7 +1535,9 @@ public final class PlaybackService extends Service {
 
   public void refreshBuffer() {
     if (!destroyed && playbackBuffer != null)
-      playbackBuffer.update(queue, index, mode, quality, isPlaying());
+      // 当前音频仍需联网时，后续预载让出带宽；缓存完整后由完成事件恢复。
+      playbackBuffer.update(queue, index, mode, quality,
+          isPlaying() && !lyricBuffering && (mediaSource == null || mediaSource.fullyCached()));
   }
 
   private void updateFmVisualizer() {

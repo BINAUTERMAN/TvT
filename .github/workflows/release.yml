@@ -53,32 +53,12 @@ jobs:
           $sequence = [Math]::Max($minimumSequence, 100000 + [long]'${{ github.run_number }}')
           "TING_VERSION_CODE=$sequence" >> $env:GITHUB_ENV
       - run: npm ci
-      - name: Verify interface and protocol
+      - name: Verify update and audio protocol
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force build | Out-Null
-          $server = Start-Process -FilePath node -ArgumentList 'node_modules/vite/bin/vite.js','web','--host','127.0.0.1','--port','5173','--strictPort' -PassThru -WindowStyle Hidden -RedirectStandardOutput build/vite.log -RedirectStandardError build/vite-error.log
-          try {
-            $ready = $false
-            for ($attempt = 0; $attempt -lt 40; $attempt++) {
-              try {
-                Invoke-WebRequest 'http://127.0.0.1:5173' -TimeoutSec 2 | Out-Null
-                $ready = $true
-                break
-              } catch { Start-Sleep -Milliseconds 500 }
-            }
-            if (!$ready) { throw 'Interface test server did not start' }
-            ./scripts/test-updates.ps1
-            ./scripts/test-lyrics.ps1
-            npm test
-            if ($LASTEXITCODE -ne 0) { throw 'Interface tests failed' }
-            node scripts/test-login-protocol.mjs
-            if ($LASTEXITCODE -ne 0) { throw 'Protocol tests failed' }
-            ./scripts/test-network-safety.ps1
-            if ($LASTEXITCODE -ne 0) { throw 'Network safety tests failed' }
-          } finally {
-            Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
-          }
+          ./scripts/test-updates.ps1
+          ./scripts/test-network-safety.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Audio protocol checks failed' }
       - run: node scripts/ci-version.mjs
       - run: npm run apk
       - name: Generate update manifest

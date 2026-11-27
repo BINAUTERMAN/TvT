@@ -18,8 +18,8 @@ final class PlaybackBuffer implements AutoCloseable {
     JSONObject resolve(JSONObject track, String quality) throws Exception;
   }
 
-  static final long MAX_FILE_BYTES = 48L * 1024 * 1024;
-  static final long MAX_TOTAL_BYTES = MAX_FILE_BYTES * 3;
+  static final long MAX_FILE_BYTES = AudioBlockCache.MAX_FILE_BYTES;
+  static final long MAX_TOTAL_BYTES = AudioBlockCache.MAX_TOTAL_BYTES;
   private final Context context;
   private final File root;
   private final Resolver resolver;
@@ -38,7 +38,8 @@ final class PlaybackBuffer implements AutoCloseable {
           },
           new ThreadPoolExecutor.DiscardOldestPolicy());
   private volatile int generation;
-  private volatile HttpURLConnection connection;
+  private volatile NetworkMediaSource fetchingSource;
+  private volatile String protectedKey = "";
   private String signature = "";
   private String queueSignature = "";
   private int[] upcoming = new int[0];
@@ -81,7 +82,7 @@ final class PlaybackBuffer implements AutoCloseable {
 
   private String key(JSONObject track, String quality) {
     String hash = track.optString("hash").toLowerCase(Locale.ROOT);
-    if (!track.optString("uri").isEmpty()
+    if ((!track.optString("uri").isEmpty() && !track.optString("uri").startsWith("ting-cache://"))
         || !hash.matches("[a-f0-9]{32}")
         || !Arrays.asList(QualityCatalog.KEYS).contains(quality)) return "";
     return "u" + Long.toHexString(owner.getAsLong()) + "-" + hash + "-" + quality;
@@ -91,15 +92,25 @@ final class PlaybackBuffer implements AutoCloseable {
     String key = key(track, quality);
     if (key.isEmpty()) return null;
     synchronized (this) {
+      try (AudioBlockCache streamed = new AudioBlockCache(root, key, -1)) {
+        if (streamed.complete())
+          return new JSONObject()
+              .put("uri", Uri.fromFile(streamed.file()).toString())
+              .put("quality", quality);
+      } catch (IOException | JSONException ignored) {
+      }
       try {
         File audio = new File(root, key + ".audio"), meta = new File(root, key + ".json");
         if (!meta.isFile() || !audio.isFile()) return null;
         JSONObject record =
             new JSONObject(new String(Files.readAllBytes(meta.toPath()), StandardCharsets.UTF_8));
-        if (audio.length() == 0 || audio.length() != record.optLong("bytes")) return null;
+        if (audio.length() == 0
+            || audio.length() != record.optLong("bytes")
+            || !quality.equals(record.optString("quality"))) return null;
         // 自动预缓存短期使用，避免长期沿用过去的账号授权。
         if (System.currentTimeMillis() - record.optLong("createdAt") > 24L * 60 * 60 * 1000)
           return null;
+        audio.setLastModified(System.currentTimeMillis());
         return new JSONObject()
             .put("uri", Uri.fromFile(audio).toString())
             .put("quality", record.getString("quality"));
@@ -172,16 +183,88 @@ final class PlaybackBuffer implements AutoCloseable {
         });
   }
 
+  void protectCurrent(JSONObject item, String quality) {
+    protectedKey = key(item, quality);
+  }
+
+  NetworkMediaSource source(JSONObject item, String quality, String address) throws IOException {
+    return source(item, quality, address, MAX_TOTAL_BYTES);
+  }
+
+  private NetworkMediaSource source(JSONObject item, String quality, String address, long fileLimit)
+      throws IOException {
+    String identity = key(item, quality);
+    return new NetworkMediaSource(
+        address,
+        identity.isEmpty()
+            ? null
+            : length -> length > fileLimit ? null : streamCache(identity, length));
+  }
+
+  private synchronized AudioBlockCache streamCache(String identity, long length)
+      throws IOException {
+    if (length <= 0) {
+      try {
+        return new AudioBlockCache(root, identity, -1);
+      } catch (IOException missing) {
+        return null;
+      }
+    }
+    if (length > MAX_TOTAL_BYTES) return null;
+    long previous = new File(root, identity + ".stream").length();
+    makeRoom(Math.max(0, length - previous), Collections.singleton(identity));
+    return new AudioBlockCache(root, identity, length);
+  }
+
   private synchronized void trim(Set<String> keep) throws IOException {
+    makeRoom(0, keep);
+  }
+
+  private void makeRoom(long incoming, Set<String> keep) throws IOException {
     if (!root.isDirectory() && !root.mkdirs()) throw new IOException("预缓存目录不可用");
     File[] files = root.listFiles();
     if (files == null) return;
+    long used = 0;
+    List<File> audioFiles = new ArrayList<>();
     for (File file : files) {
       String name = file.getName();
       int suffix = name.lastIndexOf('.');
-      if (suffix < 0 || !keep.contains(name.substring(0, suffix)) || name.endsWith(".part"))
+      if (suffix < 0) continue;
+      String identity = name.substring(0, suffix);
+      if (name.endsWith(".part")) {
         file.delete();
+        continue;
+      }
+      if (!name.endsWith(".audio") && !name.endsWith(".stream")) continue;
+      if (!identity.equals(protectedKey)
+          && !keep.contains(identity)
+          && System.currentTimeMillis() - file.lastModified() > AudioBlockCache.MAX_AGE_MS) {
+        remove(identity);
+        if (!file.exists()) continue;
+      }
+      used += file.length();
+      audioFiles.add(file);
     }
+    audioFiles.sort(Comparator.comparingLong(File::lastModified));
+    for (File file : audioFiles) {
+      if (used + incoming <= MAX_TOTAL_BYTES) break;
+      String name = file.getName(), identity = name.substring(0, name.lastIndexOf('.'));
+      if (identity.equals(protectedKey) || keep.contains(identity)) continue;
+      long size = groupBytes(identity);
+      remove(identity);
+      used -= size - groupBytes(identity);
+    }
+    if (used + incoming > MAX_TOTAL_BYTES) throw new IOException("预缓存空间已满");
+  }
+
+  private void remove(String identity) {
+    for (String suffix : new String[] {".audio", ".json", ".stream", ".ranges", ".ranges.tmp"})
+      new File(root, identity + suffix).delete();
+  }
+
+  private long groupBytes(String identity) {
+    return new File(root, identity + ".audio").length()
+        + new File(root, identity + ".stream").length();
   }
 
   void fetch(JSONObject item, String quality, int token) throws Exception {
@@ -189,79 +272,42 @@ final class PlaybackBuffer implements AutoCloseable {
     if (key.isEmpty() || token != generation) return;
     JSONObject resolved = resolver.resolve(item, quality);
     if (token != generation) return;
-    URL url = new URL(resolved.getString("url"));
-    boolean officialLegacyAudio =
-        url.getProtocol().equals("http")
-            && url.getHost().equalsIgnoreCase("fs.youthandroid2.kugou.com");
-    if (!url.getProtocol().equals("https") && !officialLegacyAudio)
-      throw new IOException("预缓存地址无效");
-    File partial = new File(root, key + ".part");
-    HttpURLConnection request = null;
+    String actual = resolved.getString("quality");
+    NetworkMediaSource source = source(item, actual, resolved.getString("url"), MAX_FILE_BYTES);
+    fetchingSource = source;
     try {
-      long available;
-      synchronized (this) {
-        if (!root.isDirectory() && !root.mkdirs()) throw new IOException("预缓存目录不可用");
-        new File(root, key + ".audio").delete();
-        new File(root, key + ".json").delete();
-        long used = 0;
-        File[] files = root.listFiles();
-        if (files != null)
-          for (File file : files) if (file.getName().endsWith(".audio")) used += file.length();
-        available = Math.min(MAX_FILE_BYTES, MAX_TOTAL_BYTES - used);
-        if (available <= 0) throw new IOException("预缓存空间已满");
-      }
-      request = AppHttp.open(url);
-      request.setConnectTimeout(8000);
-      request.setReadTimeout(8000);
-      request.setInstanceFollowRedirects(false);
-      connection = request;
       if (token != generation) return;
-      if (request.getResponseCode() != 200) throw new IOException("预缓存请求未完成");
-      long total = request.getContentLengthLong();
-      if (total > available) throw new IOException("预缓存超过空间上限");
-      long bytes = 0;
-      try (InputStream input = request.getInputStream();
-          OutputStream output = new FileOutputStream(partial)) {
-        byte[] buffer = new byte[32768];
-        int length;
-        while ((length = input.read(buffer)) != -1) {
-          if (token != generation || Thread.currentThread().isInterrupted())
-            throw new InterruptedIOException();
-          bytes += length;
-          if (bytes > available) throw new IOException("预缓存超过空间上限");
-          output.write(buffer, 0, length);
-        }
+      long total = source.getSize();
+      if (total <= 0 || total > MAX_FILE_BYTES || !source.cacheEnabled())
+        throw new IOException("预缓存超过空间上限");
+      byte[] buffer = new byte[AudioBlockCache.BLOCK_BYTES];
+      long offset = 0;
+      while (offset < total) {
+        if (token != generation || Thread.currentThread().isInterrupted())
+          throw new InterruptedIOException();
+        int count = source.readAt(offset, buffer, 0, buffer.length);
+        if (count <= 0) throw new IOException("预缓存音频不完整");
+        offset += count;
       }
-      if (bytes == 0 || (total >= 0 && bytes != total)) throw new IOException("预缓存音频不完整");
+      JSONObject local = playback(item, actual);
+      if (local == null) throw new IOException("预缓存音频不完整");
       MediaMetadataRetriever metadata = new MediaMetadataRetriever();
+      boolean valid = false;
       try {
-        metadata.setDataSource(partial.getAbsolutePath());
+        metadata.setDataSource(new File(new URI(local.getString("uri"))).getAbsolutePath());
         String duration = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
         if (duration == null || Long.parseLong(duration) <= 0) throw new IOException("预缓存音频不可用");
+        valid = true;
       } finally {
         metadata.release();
-      }
-      synchronized (this) {
-        if (token != generation || !key.equals(key(item, quality))) return;
-        File audio = new File(root, key + ".audio"), meta = new File(root, key + ".json");
-        if (!partial.renameTo(audio)) throw new IOException("预缓存保存失败");
-        try {
-          JSONObject record =
-              new JSONObject()
-                  .put("bytes", bytes)
-                  .put("quality", resolved.getString("quality"))
-                  .put("createdAt", System.currentTimeMillis());
-          Files.write(meta.toPath(), record.toString().getBytes(StandardCharsets.UTF_8));
-        } catch (Exception error) {
-          audio.delete();
-          meta.delete();
-          throw error;
-        }
+        if (!valid)
+          synchronized (this) {
+            remove(key(item, actual));
+          }
       }
     } finally {
-      if (request != null) request.disconnect();
-      if (connection == request) connection = null;
-      partial.delete();
+      source.close();
+      if (fetchingSource == source) fetchingSource = null;
     }
   }
 
@@ -269,8 +315,8 @@ final class PlaybackBuffer implements AutoCloseable {
     generation++;
     signature = "";
     worker.getQueue().clear();
-    HttpURLConnection active = connection;
-    if (active != null) active.disconnect();
+    NetworkMediaSource active = fetchingSource;
+    if (active != null) active.close();
   }
 
   @Override

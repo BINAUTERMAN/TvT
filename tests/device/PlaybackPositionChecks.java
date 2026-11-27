@@ -17,12 +17,14 @@ public final class PlaybackPositionChecks extends Instrumentation {
   private String requestedHash = "";
   private boolean restoreOnly;
   private boolean restorePlaying = true;
+  private String restoreQuality="",restorePreload="";
   @Override public void onCreate(Bundle args) {
     super.onCreate(args);
     requestedHash=args==null?"":args.getString("trackHash","");
     restoreOnly=args!=null&&"true".equals(args.getString("restoreOnly"));
     if(args!=null&&args.containsKey("resumeMs"))restoreMs=Integer.parseInt(args.getString("resumeMs"));
     if(args!=null)restorePlaying=!"false".equals(args.getString("resumePlayback"));
+    if(args!=null){restoreQuality=args.getString("quality","");restorePreload=args.getString("preloadAudio","");}
     start();
   }
   private void report(String text) {
@@ -86,6 +88,11 @@ public final class PlaybackPositionChecks extends Instrumentation {
     Context target=getTargetContext();
     try {
       SharedPreferences saved=target.getSharedPreferences("playback",0);
+      if(!restoreQuality.isEmpty()){
+        if(!java.util.Arrays.asList("128","320","flac","high").contains(restoreQuality))throw new Exception("Invalid restore quality");
+        saved.edit().putString("quality",restoreQuality).commit();
+      }
+      if(!restorePreload.isEmpty())target.getSharedPreferences("preferences",0).edit().putBoolean("preloadAudio",Boolean.parseBoolean(restorePreload)).commit();
       JSONArray original=new JSONArray(saved.getString("queue","[]"));
       check("Current queue is retained",original.length()>0);
       if(!requestedHash.isEmpty()) {
