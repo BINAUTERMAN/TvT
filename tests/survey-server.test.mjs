@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+  mkdir,
+  symlink,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -21,6 +28,50 @@ const answers = () => ({
   email: 'survey-test@example.com',
   displayId: '验收用户',
   consent: true,
+});
+
+test('问卷静态资源拒绝通过目录链接读取站点外文件', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tvt-static-'));
+  const publicDir = join(root, 'public');
+  const outside = join(root, 'outside');
+  await mkdir(publicDir);
+  await mkdir(outside);
+  await writeFile(join(publicDir, 'survey.html'), 'public fixture');
+  await writeFile(join(outside, 'app.js'), 'outside fixture');
+  await symlink(outside, join(publicDir, 'assets'), 'junction');
+  const store = openStore(join(root, 'test.sqlite'), randomBytes(32));
+  const server = createSurveyServer({
+    store,
+    publicOrigin: 'https://review.example',
+    staticDir: publicDir,
+  });
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  const get = (path) =>
+    new Promise((accept, reject) => {
+      const request = http.get(
+        {
+          host: '127.0.0.1',
+          port: server.address().port,
+          path,
+          headers: { Host: 'review.example' },
+        },
+        (response) => {
+          response.resume();
+          response.on('end', () => accept(response.statusCode));
+        },
+      );
+      request.on('error', reject);
+    });
+  try {
+    assert.equal(await get('/survey.html'), 200);
+    assert.equal(await get('/assets/app.js'), 404);
+  } finally {
+    await new Promise((done) => {
+      server.close(done);
+      server.closeAllConnections();
+    });
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('公网 IP 直连模式只信任本机 Nginx 覆盖的地址，并关闭表单和管理入口', async () => {

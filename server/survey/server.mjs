@@ -6,8 +6,21 @@ import {
   randomBytes,
 } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync, statSync, chmodSync } from 'node:fs';
-import { resolve, dirname, extname } from 'node:path';
+import {
+  mkdirSync,
+  readFileSync,
+  statSync,
+  chmodSync,
+  realpathSync,
+} from 'node:fs';
+import {
+  resolve,
+  dirname,
+  extname,
+  relative,
+  isAbsolute,
+  sep,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isIP } from 'node:net';
 
@@ -305,8 +318,16 @@ export function createSurveyServer({
             ? path.slice(1)
             : '';
       if (!asset) throw fail(404, '页面不存在');
-      const target = resolve(staticDir, asset);
-      if (!statSync(target, { throwIfNoEntry: false })?.isFile())
+      const candidate = resolve(staticDir, asset);
+      if (!statSync(candidate, { throwIfNoEntry: false })?.isFile())
+        throw fail(404, '页面不存在');
+      const target = realpathSync(candidate);
+      const inside = relative(realpathSync(staticDir), target);
+      if (
+        inside === '..' ||
+        inside.startsWith('..' + sep) ||
+        isAbsolute(inside)
+      )
         throw fail(404, '页面不存在');
       const type = {
         '.html': 'text/html',

@@ -1,9 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.ting.music.tests">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+    <instrumentation android:name="cn.ting.music.tests.SystemMediaChecks" android:targetPackage="cn.ting.music" android:label="TvT 广播安全与媒体图标验证" />
     <instrumentation android:name="cn.ting.music.tests.PlaybackCacheChecks" android:targetPackage="cn.ting.music" android:label="TvT 流式缓存与音质切换验证" />
     <instrumentation android:name="cn.ting.music.tests.PlaybackPositionChecks" android:targetPackage="cn.ting.music" android:label="TvT 歌词定位与续播验证" />
     <instrumentation android:name="cn.ting.music.tests.PlaybackLoadChecks" android:targetPackage="cn.ting.music" android:label="TvT 音质加载耗时诊断" />
-    <application android:label="听屿设备测试">
+    <application android:label="听屿设备测试" android:allowBackup="false" android:usesCleartextTraffic="false">
         <activity android:name=".FocusProbeActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
     <instrumentation android:name="cn.ting.music.tests.CrashDiagnostics" android:targetPackage="cn.ting.music" android:label="TvT 崩溃诊断" />

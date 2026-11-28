@@ -1,0 +1,6 @@
+<resources>
+    <!-- 大屏媒体面板会放大自定义按钮，留白只缩小图形，不缩小点击区域。 -->
+    <dimen name="media_action_size">48dp</dimen>
+    <integer name="media_action_viewport">44</integer>
+    <integer name="media_action_padding">10</integer>
+</resources>

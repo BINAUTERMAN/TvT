@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.ting.music" android:versionCode="100012" android:versionName="5.9">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.ting.music" android:versionCode="100013" android:versionName="5.10">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -14,7 +14,7 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
-        <receiver android:name=".CacheReceiver" android:exported="true">
+        <receiver android:name=".CacheReceiver" android:exported="true" android:permission="android.permission.SEND_DOWNLOAD_COMPLETED_INTENTS">
             <intent-filter><action android:name="android.intent.action.DOWNLOAD_COMPLETE" /></intent-filter>
         </receiver>
         <activity android:name=".LyricsPermissionActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar" />

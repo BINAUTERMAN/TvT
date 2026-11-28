@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { giteeRequest, releaseId } from './gitee-request.mjs';
 
 const config = JSON.parse(await fs.readFile('config/update.json', 'utf8'));
 const repository = process.env.TING_GITEE_REPOSITORY || config.giteeRepository;
@@ -8,7 +9,10 @@ if (!repository) {
   console.log('未配置 Gitee 仓库，跳过同步。');
   process.exit(0);
 }
-if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
+if (
+  !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ||
+  repository.split('/').some((part) => part === '.' || part === '..')
+)
   throw new Error('Gitee 仓库配置无效');
 const token = process.env.GITEE_TOKEN;
 if (!token)
@@ -35,17 +39,17 @@ if (createHash('sha256').update(apk).digest('hex') !== manifest.sha256)
 if (apk.length > 100 * 1024 * 1024)
   throw new Error('APK 超过 Gitee 单附件容量限制');
 const tag = manifest.tag || manifest.versionName;
-if (typeof tag !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(tag))
+if (
+  typeof tag !== 'string' ||
+  !/^[A-Za-z0-9_.-]+$/.test(tag) ||
+  tag === '.' ||
+  tag === '..'
+)
   throw new Error('发行标签无效');
 const api = `https://gitee.com/api/v5/repos/${repository}`;
 
 async function request(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(180000),
-  });
-  if (!response.ok) throw new Error(`Gitee 同步失败：HTTP ${response.status}`);
-  return response;
+  return giteeRequest(url, options);
 }
 async function write(url, method, data) {
   const response = await request(url, {
@@ -61,6 +65,7 @@ if (repo.private !== false || !repo.default_branch)
   throw new Error('Gitee 仓库必须公开且包含默认分支');
 const existingResponse = await fetch(`${api}/releases/tags/${tag}`, {
   signal: AbortSignal.timeout(30000),
+  redirect: 'error',
 });
 if (!existingResponse.ok && existingResponse.status !== 404)
   throw new Error(`读取 Gitee 发行版失败：HTTP ${existingResponse.status}`);
@@ -79,7 +84,11 @@ const details = {
 let release = existing;
 if (!existing) release = await write(`${api}/releases`, 'POST', details);
 else if (existing.prerelease)
-  release = await write(`${api}/releases/${existing.id}`, 'PATCH', details);
+  release = await write(
+    `${api}/releases/${releaseId(existing.id)}`,
+    'PATCH',
+    details,
+  );
 
 if (!existing || existing.prerelease) {
   const present = new Set((release.assets || []).map((asset) => asset.name));
@@ -99,7 +108,7 @@ if (!existing || existing.prerelease) {
       }),
       name,
     );
-    await request(`${api}/releases/${release.id}/attach_files`, {
+    await request(`${api}/releases/${releaseId(release.id)}/attach_files`, {
       method: 'POST',
       body: data,
     });
@@ -138,7 +147,7 @@ for (const [name, bytes] of [
 }
 if (!existing || existing.prerelease)
   // Gitee 更新发行版时仍要求标签、名称和说明，不能只发送状态字段。
-  await write(`${api}/releases/${release.id}`, 'PATCH', {
+  await write(`${api}/releases/${releaseId(release.id)}`, 'PATCH', {
     ...details,
     prerelease: false,
   });

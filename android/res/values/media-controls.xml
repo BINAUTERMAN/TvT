@@ -1,0 +1,5 @@
+<resources>
+    <dimen name="media_action_size">24dp</dimen>
+    <integer name="media_action_viewport">24</integer>
+    <integer name="media_action_padding">0</integer>
+</resources>
